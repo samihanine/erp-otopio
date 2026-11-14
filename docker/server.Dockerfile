@@ -1,7 +1,7 @@
 # API (Hono + better-auth) — runs DB migrations + initial seed on boot
 FROM oven/bun:1.4.4 AS base
 WORKDIR /app
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/worker/package.json apps/worker/
 COPY apps/web/package.json apps/web/

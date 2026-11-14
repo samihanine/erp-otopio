@@ -5,7 +5,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/worker/package.json apps/worker/
 COPY apps/web/package.json apps/web/
