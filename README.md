@@ -38,5 +38,16 @@ Projet Dokploy **Otopio ERP**, environnements `production` et `staging`, chacun 
 - prod : https://erp.otopio.ca — staging : https://staging.erp.otopio.ca
 - Traefik route `/api` → `server:3000` et `/` → `web:80` sur le même domaine (cookies same-origin).
 - Le serveur applique les migrations puis le seed (uniquement si la base est vide) au démarrage.
+- Branches : `main` → production, `staging` → staging (auto-deploy Dokploy sur push).
+- Cloudflare R2 : buckets `otopio-erp` (prod), `otopio-erp-staging`, `otopio-erp-backups` (dump quotidien du worker + backup Dokploy à 4 h).
+
+### Connexion Google (OAuth)
+
+Google Cloud Console → projet *otopio erp* → **APIs & Services → OAuth consent screen** (type *Internal*), puis **Credentials → Create credentials → OAuth client ID** (type *Web application*) :
+
+- Authorized JavaScript origins : `https://erp.otopio.ca`, `https://staging.erp.otopio.ca`
+- Authorized redirect URIs : `https://erp.otopio.ca/api/auth/callback/google`, `https://staging.erp.otopio.ca/api/auth/callback/google`
+
+Renseigner ensuite `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` dans l'app `server` (prod + staging) et redéployer.
 
 Variables d'environnement : voir `.env.example`.
