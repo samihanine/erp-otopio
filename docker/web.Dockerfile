@@ -1,5 +1,5 @@
 # Front-end (Vite + React) served by nginx; /api is routed to the server by Traefik
-FROM oven/bun:1.2 AS build
+FROM oven/bun:1.4.4 AS build
 WORKDIR /app
 COPY package.json bun.lock ./
 COPY apps/server/package.json apps/server/
