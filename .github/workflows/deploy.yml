@@ -1,0 +1,19 @@
+name: Deploy (Dokploy)
+
+on:
+  push:
+    branches: [main, staging]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Dokploy deploy webhooks
+        env:
+          HOOKS: ${{ github.ref_name == 'main' && secrets.DOKPLOY_HOOKS_PRODUCTION || secrets.DOKPLOY_HOOKS_STAGING }}
+        run: |
+          if [ -z "$HOOKS" ]; then echo "No Dokploy hooks configured for ${{ github.ref_name }} — skipping"; exit 0; fi
+          for url in $HOOKS; do
+            curl -fsS -X POST "$url" -H "content-type: application/json" -H "X-GitHub-Event: push" \
+              -d '{"ref":"${{ github.ref }}","after":"${{ github.sha }}","head_commit":{"message":"deploy ${{ github.sha }}"}}' && echo " ✓ ${url%%/api/*}"
+          done
