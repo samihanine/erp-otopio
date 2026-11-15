@@ -84,13 +84,13 @@ documents.get("/:kind/:id/pdf", async (c) => {
   const input = await buildRenderInput(kind, c.req.param("id"), locale);
   if (!input) return c.json({ error: "Not found" }, 404);
   try {
-    const job = await queue.add("render-pdf", { kind, id: c.req.param("id"), html: renderDocumentHtml(input) }, { removeOnComplete: 50, removeOnFail: 50 });
+    const table = kind === "quote" ? schema.quote : schema.invoice;
+    const [rec] = await db.select({ org: table.organizationId, issueDate: table.issueDate }).from(table).where(eq(table.id, c.req.param("id")));
+    const fileName = `${rec?.issueDate ?? new Date().toISOString().slice(0, 10)} — ${input.client?.name ?? "Client"} — ${kind === "quote" ? "Devis" : "Facture"} — ${input.number}.pdf`.replace(/[\/]/g, "-");
+    const job = await queue.add("render-pdf", { kind, id: c.req.param("id"), html: renderDocumentHtml(input), organizationId: rec?.org ?? null, fileName }, { removeOnComplete: 50, removeOnFail: 50 });
     const result = (await job.waitUntilFinished(queueEvents, 45_000)) as { pdfBase64: string; url?: string | null };
     const buf = Buffer.from(result.pdfBase64, "base64");
-    if (result.url) {
-      const table = kind === "quote" ? schema.quote : schema.invoice;
-      await db.update(table).set({ fileUrl: result.url }).where(eq(table.id, c.req.param("id")));
-    }
+    if (result.url) await db.update(table).set({ fileUrl: result.url }).where(eq(table.id, c.req.param("id")));
     return new Response(buf, {
       headers: {
         "content-type": "application/pdf",

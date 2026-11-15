@@ -7,6 +7,11 @@ import { Worker, Queue } from "bullmq";
 import IORedis from "ioredis";
 import { S3Client } from "bun";
 import puppeteer, { type Browser } from "puppeteer-core";
+import { googleConfigured } from "@erp/google";
+import { ensureClientFolders, savePdfToClientFolder, syncDrive } from "./sync/drive";
+import { deleteEventInGoogle, patchEventInGoogle, pushEventToGoogle, syncCalendars } from "./sync/calendar";
+import { syncGmail } from "./sync/gmail";
+import { dashboardDigest, summarizeClients, summarizeCommunications } from "./sync/ai";
 
 const env = process.env;
 const QUEUE = "erp";
@@ -26,7 +31,7 @@ async function getBrowser() {
   return browser;
 }
 
-async function renderPdf(data: { kind: string; id: string; html: string }) {
+async function renderPdf(data: { kind: string; id: string; html: string; organizationId?: string | null; fileName?: string }) {
   const b = await getBrowser();
   const page = await b.newPage();
   try {
@@ -34,7 +39,13 @@ async function renderPdf(data: { kind: string; id: string; html: string }) {
     await page.evaluate(() => document.fonts.ready);
     const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
     let url: string | null = null;
-    if (r2Ready) {
+    if (googleConfigured() && data.organizationId && data.fileName) {
+      url = await savePdfToClientFolder(data.organizationId, data.fileName, pdf).catch((e) => {
+        console.warn("[pdf] drive upload failed", (e as Error).message);
+        return null;
+      });
+    }
+    if (!url && r2Ready) {
       const key = `documents/${data.kind}/${data.id}.pdf`;
       await s3(env.R2_BUCKET ?? "otopio-erp").write(key, pdf, { type: "application/pdf" });
       url = env.R2_PUBLIC_URL ? `${env.R2_PUBLIC_URL.replace(/\/$/, "")}/${key}` : null;
@@ -69,11 +80,27 @@ const worker = new Worker(
         return renderPdf(job.data);
       case "db-backup":
         return backupDatabase();
+      case "drive-sync":
+        return googleConfigured() ? syncDrive() : null;
+      case "client-folder":
+        return googleConfigured() ? Object.fromEntries(await ensureClientFolders(job.data.organizationId)) : null;
+      case "calendar-sync":
+        return googleConfigured() ? syncCalendars() : null;
+      case "event-push":
+        return googleConfigured() ? (job.data.action === "delete" ? deleteEventInGoogle(job.data.owner, job.data.googleEventId) : job.data.action === "update" ? patchEventInGoogle(job.data.id) : pushEventToGoogle(job.data.id)) : null;
+      case "gmail-sync":
+        return googleConfigured() ? syncGmail() : null;
+      case "ai-sync": {
+        const comms = await summarizeCommunications();
+        const clients = await summarizeClients();
+        const digest = await dashboardDigest();
+        return { comms, clients, digest };
+      }
       default:
         throw new Error(`Unknown job ${job.name}`);
     }
   },
-  { connection, concurrency: 2 },
+  { connection, concurrency: 2, lockDuration: 10 * 60_000 },
 );
 
 worker.on("completed", (job) => console.log(`[worker] ${job.name} #${job.id} done`));
@@ -82,6 +109,15 @@ worker.on("failed", (job, err) => console.error(`[worker] ${job?.name} #${job?.i
 // Schedule the recurring backup
 const queue = new Queue(QUEUE, { connection });
 await queue.upsertJobScheduler("db-backup", { pattern: env.BACKUP_CRON ?? "0 3 * * *" }, { name: "db-backup", opts: { removeOnComplete: 30, removeOnFail: 30 } });
+const keep = { removeOnComplete: 20, removeOnFail: 50 };
+if (env.SYNC_ENABLED !== "false") {
+  await queue.upsertJobScheduler("drive-sync", { every: 10 * 60_000 }, { name: "drive-sync", opts: keep });
+  await queue.upsertJobScheduler("calendar-sync", { every: 10 * 60_000 }, { name: "calendar-sync", opts: keep });
+  await queue.upsertJobScheduler("gmail-sync", { every: 15 * 60_000 }, { name: "gmail-sync", opts: keep });
+  await queue.upsertJobScheduler("ai-sync", { every: 60 * 60_000 }, { name: "ai-sync", opts: keep });
+} else {
+  for (const id of ["drive-sync", "calendar-sync", "gmail-sync", "ai-sync"]) await queue.removeJobScheduler(id).catch(() => {});
+}
 
 console.log(`[worker] ready — R2 ${r2Ready ? "configured" : "not configured"}, backups "${env.BACKUP_CRON ?? "0 3 * * *"}"`);
 

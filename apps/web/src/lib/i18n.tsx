@@ -6,6 +6,7 @@ const dict = {
   home: { fr: "Accueil", en: "Home" },
   database: { fr: "Base de données", en: "Database" },
   databaseShort: { fr: "Données", en: "Data" },
+  clients: { fr: "Clients", en: "Clients" },
   documents: { fr: "Documents", en: "Documents" },
   finance: { fr: "Finance", en: "Finance" },
   website: { fr: "Site web", en: "Website" },

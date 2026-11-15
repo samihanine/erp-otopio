@@ -17,6 +17,21 @@ import {
   type Sort,
 } from "../lib/data";
 import type { AppEnv } from "../lib/types";
+import { queue } from "../lib/queue";
+
+/** Side effects to Google (Drive folders, Calendar) handled by the worker */
+async function afterWrite(key: TableKey, row: Record<string, unknown>, before?: Record<string, unknown>, deleted = false) {
+  try {
+    if (key === "organization" && !deleted && row.type === "client" && (!before || before.name !== row.name || before.type !== row.type))
+      await queue.add("client-folder", { organizationId: row.id }, { removeOnComplete: 20, removeOnFail: 20 });
+    if (key === "event") {
+      if (deleted && row.googleEventId) await queue.add("event-push", { action: "delete", owner: row.calendarOwner, googleEventId: row.googleEventId }, { removeOnComplete: 20 });
+      else if (!deleted) await queue.add("event-push", { action: before ? "update" : "create", id: row.id }, { removeOnComplete: 20 });
+    }
+  } catch (e) {
+    console.warn("[afterWrite]", (e as Error).message);
+  }
+}
 
 export const data = new Hono<AppEnv>();
 
@@ -184,8 +199,14 @@ data.post("/:table", async (c) => {
   }
 
   try {
+    if (key === "event") {
+      values.calendarOwner ??= c.get("user")?.email ?? "contact@otopio.ca";
+      values.startAt ??= new Date();
+      values.endAt ??= new Date(new Date(values.startAt as string).getTime() + 3600_000);
+    }
     const [row] = await db.insert(TABLE_MAP[key]).values(values as never).returning();
     const r = row as Record<string, unknown>;
+    await afterWrite(key, r);
     await logActivity(key, String(r.id), "created", c.get("user")?.id);
     const refs = await resolveRefs(key, [r]);
     return c.json({ row, refs }, 201);
@@ -222,6 +243,7 @@ data.patch("/:table/:id", async (c) => {
       if (JSON.stringify(before) !== JSON.stringify(v) && k !== "lines" && k !== "taxes") changes[k] = { from: before, to: v };
     }
     if (Object.keys(changes).length) await logActivity(key, id, "updated", c.get("user")?.id, changes);
+    if (Object.keys(changes).length) await afterWrite(key, row as Record<string, unknown>, existing as Record<string, unknown>);
     const refs = await resolveRefs(key, [row as Record<string, unknown>]);
     return c.json({ row, refs });
   } catch (e) {
@@ -234,7 +256,9 @@ data.delete("/:table/:id", async (c) => {
   if (!isTableKey(key)) return c.json({ error: "Unknown table" }, 404);
   const cols = columns(key);
   try {
+    const [old] = await db.select().from(TABLE_MAP[key]).where(eq(cols.id!, c.req.param("id")));
     await db.delete(TABLE_MAP[key]).where(eq(cols.id!, c.req.param("id")));
+    if (old) await afterWrite(key, old as Record<string, unknown>, undefined, true);
     await logActivity(key, c.req.param("id"), "deleted", c.get("user")?.id);
     return c.json({ ok: true });
   } catch (e) {

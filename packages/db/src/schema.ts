@@ -195,6 +195,9 @@ export const organization = pgTable(
     defaultEntityId: uuid("default_entity_id").references(() => legalEntity.id, { onDelete: "set null" }),
     tags: text("tags").array().notNull().default([]),
     notes: text("notes"),
+    driveFolderId: text("drive_folder_id"),
+    aiSummary: text("ai_summary"),
+    aiSummaryAt: timestamp("ai_summary_at", { withTimezone: true }),
     ...timestamps,
   },
   (t) => [index("organization_type_idx").on(t.type), index("organization_name_idx").on(t.name)],
@@ -242,6 +245,8 @@ export const communication = pgTable(
     attachmentUrl: text("attachment_url"),
     summary: text("summary"),
     nextSteps: text("next_steps"),
+    eventId: uuid("event_id"),
+    aiSummary: text("ai_summary"),
     ...timestamps,
   },
   (t) => [
@@ -517,6 +522,22 @@ export const document = pgTable("document", {
   googleDocId: text("google_doc_id"),
   fileUrl: text("file_url"),
   createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  // Google Drive mirror
+  driveFileId: text("drive_file_id").unique(),
+  driveId: text("drive_id"),
+  parentId: text("parent_id"),
+  path: text("path"),
+  mimeType: text("mime_type"),
+  size: integer("size"),
+  webViewLink: text("web_view_link"),
+  thumbnailLink: text("thumbnail_link"),
+  isFolder: boolean("is_folder").notNull().default(false),
+  modifiedAt: timestamp("modified_at", { withTimezone: true }),
+  // Foreign keys to business records using this file
+  invoiceId: uuid("invoice_id").references(() => invoice.id, { onDelete: "set null" }),
+  quoteId: uuid("quote_id").references(() => quote.id, { onDelete: "set null" }),
+  billId: uuid("bill_id").references(() => bill.id, { onDelete: "set null" }),
+  communicationId: uuid("communication_id"),
   ...timestamps,
 });
 
@@ -611,3 +632,40 @@ export const mcpToken = pgTable(
   },
   (t) => [uniqueIndex("mcp_token_hash_uq").on(t.tokenHash)],
 );
+
+
+/* -------------------------------------------------------------------------- */
+/*  Calendar + sync state                                                     */
+/* -------------------------------------------------------------------------- */
+
+export const event = pgTable(
+  "event",
+  {
+    id: id(),
+    title: text("title").notNull(),
+    description: text("description"),
+    location: text("location"),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    allDay: boolean("all_day").notNull().default(false),
+    isPrivate: boolean("is_private").notNull().default(false),
+    status: text("status").notNull().default("confirmed"),
+    meetUrl: text("meet_url"),
+    calendarOwner: text("calendar_owner").notNull(), // member email
+    organizer: text("organizer"),
+    attendees: text("attendees").array().notNull().default([]),
+    organizationId: uuid("organization_id").references(() => organization.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => project.id, { onDelete: "set null" }),
+    personId: uuid("person_id").references(() => person.id, { onDelete: "set null" }),
+    googleEventId: text("google_event_id"),
+    htmlLink: text("html_link"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("event_google_uq").on(t.calendarOwner, t.googleEventId), index("event_start_idx").on(t.startAt)],
+);
+
+export const syncState = pgTable("sync_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

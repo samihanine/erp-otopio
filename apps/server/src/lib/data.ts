@@ -36,6 +36,8 @@ export const TABLE_MAP: Record<TableKey, PgTable> = {
   transaction: schema.transaction,
   article: schema.article,
   post: schema.post,
+  document: schema.document,
+  event: schema.event,
   legal_entity: schema.legalEntity,
 };
 

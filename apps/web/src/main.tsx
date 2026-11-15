@@ -15,6 +15,9 @@ import { DocumentsPage, DocumentEditorPage, FreeDocPage } from "./routes/documen
 import { FinancePage } from "./routes/finance";
 import { WebsitePage } from "./routes/website";
 import { SettingsPage } from "./routes/settings";
+import { ClientsPage, ClientPage } from "./routes/clients";
+import { FilesPage } from "./routes/files";
+import { CalendarPage } from "./routes/calendar";
 
 try {
   if (localStorage.getItem("erp.theme") === "dark") document.documentElement.classList.add("dark");
@@ -46,7 +49,11 @@ export const dbRoute = createRoute({
   component: DatabasePage,
 });
 export const recordRoute = createRoute({ getParentRoute: () => appRoute, path: "/db/$table/$id", component: RecordPage });
-const docsRoute = createRoute({ getParentRoute: () => appRoute, path: "/documents", component: DocumentsPage });
+const docsRoute = createRoute({ getParentRoute: () => appRoute, path: "/documents", component: FilesPage });
+const docsModelsRoute = createRoute({ getParentRoute: () => appRoute, path: "/documents/models", component: DocumentsPage });
+const clientsRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients", component: ClientsPage });
+export const clientRoute = createRoute({ getParentRoute: () => appRoute, path: "/clients/$id", component: ClientPage });
+const calendarRoute = createRoute({ getParentRoute: () => appRoute, path: "/calendar", component: CalendarPage });
 export const docEditorRoute = createRoute({ getParentRoute: () => appRoute, path: "/documents/$kind/$id", component: DocumentEditorPage });
 export const freeDocRoute = createRoute({ getParentRoute: () => appRoute, path: "/documents/doc/$id", component: FreeDocPage });
 const financeRoute = createRoute({ getParentRoute: () => appRoute, path: "/finance", component: FinancePage });
@@ -55,7 +62,7 @@ const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/sett
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([homeRoute, dbIndexRoute, dbRoute, recordRoute, docsRoute, freeDocRoute, docEditorRoute, financeRoute, websiteRoute, settingsRoute]),
+  appRoute.addChildren([homeRoute, dbIndexRoute, dbRoute, recordRoute, docsRoute, docsModelsRoute, clientsRoute, clientRoute, calendarRoute, freeDocRoute, docEditorRoute, financeRoute, websiteRoute, settingsRoute]),
 ]);
 
 const router = createRouter({ routeTree, defaultPreload: "intent", scrollRestoration: true });

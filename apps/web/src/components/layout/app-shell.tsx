@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Database, FileText, Globe, Home, Languages, LogOut, Moon, Search, Settings, Sun, Wallet } from "lucide-react";
+import { Briefcase, CalendarDays, Database, FileText, Globe, Home, Languages, LogOut, Moon, Search, Settings, Sun, Wallet } from "lucide-react";
 import { useI18n, type DictKey } from "@/lib/i18n";
 import { signOut, useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -12,8 +12,10 @@ import { OtopioLogo } from "./logo";
 type Section = { key: string; to: string; icon: typeof Home; label: DictKey; match: (p: string) => boolean };
 const SECTIONS: Section[] = [
   { key: "home", to: "/", icon: Home, label: "home", match: (p) => p === "/" },
+  { key: "clients", to: "/clients", icon: Briefcase, label: "clients", match: (p) => p.startsWith("/clients") },
   { key: "db", to: "/db", icon: Database, label: "databaseShort", match: (p) => p.startsWith("/db") },
   { key: "docs", to: "/documents", icon: FileText, label: "documents", match: (p) => p.startsWith("/documents") },
+  { key: "calendar", to: "/calendar", icon: CalendarDays, label: "calendar", match: (p) => p.startsWith("/calendar") },
   { key: "finance", to: "/finance", icon: Wallet, label: "finance", match: (p) => p.startsWith("/finance") },
   { key: "website", to: "/website", icon: Globe, label: "website", match: (p) => p.startsWith("/website") },
 ];

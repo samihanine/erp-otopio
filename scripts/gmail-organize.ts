@@ -7,6 +7,7 @@
 import { addresses, gmail, header, pool, type GmailLabel } from "@erp/google";
 
 const DRY = process.argv.includes("--dry");
+const FILTERS_ONLY = process.argv.includes("--filters-only");
 const USERS = (process.env.MAILBOXES ?? "sami@otopio.ca,contact@otopio.ca,maissane@otopio.ca,noah@otopio.ca").split(",");
 const SINCE = process.env.SINCE ?? ""; // e.g. "after:2026/11/01" for incremental runs
 
@@ -109,7 +110,7 @@ async function main() {
       return labelIds.get(g.label)!;
     };
 
-    const threads = await gmail.listThreads(user, `-in:spam -in:trash -in:chats ${SINCE}`.trim());
+    const threads = FILTERS_ONLY ? [] : await gmail.listThreads(user, `-in:spam -in:trash -in:chats ${SINCE}`.trim());
     stats.threads = threads.length;
     const plan: { id: string; labels: Group[]; archive: boolean }[] = [];
 

@@ -12,7 +12,12 @@
     "@erp/shared": "workspace:*",
     "bullmq": "^5.58.0",
     "ioredis": "^5.7.0",
-    "puppeteer-core": "^24.17.0"
+    "puppeteer-core": "^24.17.0",
+    "@erp/google": "workspace:*",
+    "drizzle-orm": "^0.44.5"
   },
-  "devDependencies": { "bun-types": "^1.2.21", "typescript": "^5.9.2" }
+  "devDependencies": {
+    "bun-types": "^1.2.21",
+    "typescript": "^5.9.2"
+  }
 }

@@ -19,6 +19,7 @@ export const googleConfigured = () => Boolean(process.env.GOOGLE_SERVICE_ACCOUNT
 
 export const SCOPES = {
   gmail: "https://mail.google.com/",
+  gmailSettings: "https://www.googleapis.com/auth/gmail.settings.basic",
   drive: "https://www.googleapis.com/auth/drive",
   calendar: "https://www.googleapis.com/auth/calendar",
 };

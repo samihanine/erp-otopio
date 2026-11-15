@@ -14,6 +14,7 @@ import { integrations } from "./routes/integrations";
 import { files } from "./routes/files";
 import { redisOk } from "./lib/queue";
 import { internalKey, mcp, wellKnown } from "./routes/mcp";
+import { workspace } from "./routes/workspace";
 
 const app = new Hono<AppEnv>();
 
@@ -55,6 +56,7 @@ app.route("/api/finance", finance);
 app.route("/api/documents", documents);
 app.route("/api/integrations", integrations);
 app.route("/api/files", files);
+app.route("/api/ws", workspace);
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 // Optional: serve the built SPA when STATIC_DIR is set (single-container mode)

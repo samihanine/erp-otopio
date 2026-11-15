@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { OptionBadge, Segmented, Skeleton } from "@/components/ui/misc";
 import { RelationChip } from "@/components/database/fields";
 import type { FinanceSummary } from "./finance";
+import { DigestCard } from "./automation";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -70,6 +71,8 @@ export function HomePage() {
               ]}
             />
           </div>
+
+          <DigestCard />
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label={tr({ fr: "Tâches ouvertes", en: "Open tasks" })} value={isLoading ? "…" : open.length} sub={late ? `${late} ${tr({ fr: "en retard", en: "late" })}` : undefined} to="/db/task" />

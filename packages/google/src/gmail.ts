@@ -57,10 +57,10 @@ export const gmail = {
     gfetch(user, SCOPES.gmail, `${G}/threads/${id}/modify`, { method: "POST", json: { addLabelIds: add, removeLabelIds: remove } }),
   batchModify: (user: string, ids: string[], add: string[], remove: string[] = []) =>
     gfetch(user, SCOPES.gmail, `${G}/messages/batchModify`, { method: "POST", json: { ids, addLabelIds: add, removeLabelIds: remove } }),
-  filters: async (user: string) => (await gfetch<{ filter?: { id: string; criteria: Record<string, string>; action: Record<string, unknown> }[] } | null>(user, SCOPES.gmail, `${G}/settings/filters`))?.filter ?? [],
+  filters: async (user: string) => (await gfetch<{ filter?: { id: string; criteria: Record<string, string>; action: Record<string, unknown> }[] } | null>(user, SCOPES.gmailSettings, `${G}/settings/filters`))?.filter ?? [],
   createFilter: (user: string, criteria: Record<string, string>, action: { addLabelIds?: string[]; removeLabelIds?: string[] }) =>
-    gfetch(user, SCOPES.gmail, `${G}/settings/filters`, { method: "POST", json: { criteria, action } }),
-  deleteFilter: (user: string, id: string) => gfetch(user, SCOPES.gmail, `${G}/settings/filters/${id}`, { method: "DELETE" }),
+    gfetch(user, SCOPES.gmailSettings, `${G}/settings/filters`, { method: "POST", json: { criteria, action } }),
+  deleteFilter: (user: string, id: string) => gfetch(user, SCOPES.gmailSettings, `${G}/settings/filters/${id}`, { method: "DELETE" }),
   profile: (user: string) => gfetch<{ emailAddress: string; messagesTotal: number; historyId: string }>(user, SCOPES.gmail, `${G}/profile`),
   history: (user: string, startHistoryId: string) =>
     gfetch<{ history?: { messagesAdded?: { message: GmailMessage }[] }[]; historyId: string }>(user, SCOPES.gmail, `${G}/history?startHistoryId=${startHistoryId}&historyTypes=messageAdded&maxResults=500`),
