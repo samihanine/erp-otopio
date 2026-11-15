@@ -2,7 +2,7 @@
   "name": "otopio-erp",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": ["apps/*", "packages/*", "scripts"],
   "scripts": {
     "dev": "bun run --filter '*' dev",
     "dev:web": "bun --cwd apps/web run dev",

@@ -30,6 +30,7 @@ export function LoginPage() {
     const res = await signIn.email({ email, password });
     setLoading(false);
     if (res.error) setError(res.error.message ?? "Erreur");
+    else if (next?.startsWith("/api/")) window.location.href = next;
     else navigate({ to: next ?? "/" });
   };
 

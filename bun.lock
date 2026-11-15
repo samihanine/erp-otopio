@@ -9,6 +9,7 @@
       "name": "@erp/server",
       "dependencies": {
         "@erp/db": "workspace:*",
+        "@erp/google": "workspace:*",
         "@erp/shared": "workspace:*",
         "better-auth": "^1.3.7",
         "bullmq": "^5.58.0",
@@ -81,11 +82,26 @@
         "typescript": "^5.9.2",
       },
     },
+    "packages/google": {
+      "name": "@erp/google",
+      "devDependencies": {
+        "bun-types": "^1.2.21",
+        "typescript": "^5.9.2",
+      },
+    },
     "packages/shared": {
       "name": "@erp/shared",
       "devDependencies": {
         "bun-types": "^1.2.21",
         "typescript": "^5.9.2",
+      },
+    },
+    "scripts": {
+      "name": "@erp/scripts",
+      "dependencies": {
+        "@erp/db": "workspace:*",
+        "@erp/google": "workspace:*",
+        "@erp/shared": "workspace:*",
       },
     },
   },
@@ -149,6 +165,10 @@
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 
     "@erp/db": ["@erp/db@workspace:packages/db"],
+
+    "@erp/google": ["@erp/google@workspace:packages/google"],
+
+    "@erp/scripts": ["@erp/scripts@workspace:scripts"],
 
     "@erp/server": ["@erp/server@workspace:apps/server"],
 

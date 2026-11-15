@@ -1,0 +1,6 @@
+{
+  "name": "@erp/scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@erp/google": "workspace:*", "@erp/db": "workspace:*", "@erp/shared": "workspace:*" }
+}

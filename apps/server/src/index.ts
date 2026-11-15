@@ -13,6 +13,7 @@ import { documents } from "./routes/documents";
 import { integrations } from "./routes/integrations";
 import { files } from "./routes/files";
 import { redisOk } from "./lib/queue";
+import { internalKey, mcp, wellKnown } from "./routes/mcp";
 
 const app = new Hono<AppEnv>();
 
@@ -31,8 +32,13 @@ app.get("/api/health", async (c) => {
 app.get("/api/auth/providers", (c) => c.json(authEnabledProviders()));
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
+// MCP (OAuth 2.1 + JSON-RPC) — has its own bearer auth
+app.route("/.well-known", wellKnown);
+app.route("/api/mcp", mcp);
+
 // Session guard for every other API route
 app.use("/api/*", async (c, next) => {
+  if (c.req.header("x-internal") === internalKey) return next();
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) return c.json({ error: "Unauthorized" }, 401);
   c.set("user", session.user);

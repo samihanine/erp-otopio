@@ -15,6 +15,13 @@
       "when": 1794760703437,
       "tag": "0001_communication",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794780850142,
+      "tag": "0002_mcp",
+      "breakpoints": true
     }
   ]
 }

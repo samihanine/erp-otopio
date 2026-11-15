@@ -579,3 +579,35 @@ export const activity = pgTable(
   },
   (t) => [index("activity_record_idx").on(t.table, t.recordId)],
 );
+
+/* -------------------------------------------------------------------------- */
+/*  MCP (OAuth 2.1 for Claude / ChatGPT connectors)                           */
+/* -------------------------------------------------------------------------- */
+
+export const mcpClient = pgTable("mcp_client", {
+  id: text("id").primaryKey(), // client_id
+  name: text("name").notNull(),
+  redirectUris: text("redirect_uris").array().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const mcpToken = pgTable(
+  "mcp_token",
+  {
+    id: id(),
+    kind: text("kind").notNull(), // code | access | refresh
+    tokenHash: text("token_hash").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => mcpClient.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    codeChallenge: text("code_challenge"),
+    redirectUri: text("redirect_uri"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("mcp_token_hash_uq").on(t.tokenHash)],
+);
