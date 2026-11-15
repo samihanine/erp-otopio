@@ -67,19 +67,16 @@ export function WebsitePage() {
               { label: tr({ fr: "Taux de rebond", en: "Bounce rate" }), value: data ? `${Math.round(data.totals.bounceRate * 100)} %` : "…", icon: MousePointerClick, tint: "#f97316" },
               { label: tr({ fr: "Durée moyenne", en: "Avg. duration" }), value: data ? `${Math.floor(data.totals.avgDuration / 60)} min ${data.totals.avgDuration % 60} s` : "…", icon: Timer, tint: "#10b981" },
             ].map((k) => (
-              <div key={k.label} className="rounded-2xl border border-border bg-surface p-4 shadow-card">
+              <div key={k.label} className="rounded-xl border border-border p-4">
                 <div className="flex items-center justify-between text-[13px] text-muted">
                   {k.label}
-                  <span className="grid size-7 place-items-center rounded-lg text-white" style={{ background: k.tint }}>
-                    <k.icon className="size-3.5" />
-                  </span>
                 </div>
                 <div className="mt-3 text-[26px] font-semibold tabular-nums tracking-tight">{k.value}</div>
               </div>
             ))}
           </div>
 
-          <div className="mt-6 rounded-2xl border border-border bg-surface p-5 shadow-card">
+          <div className="mt-6 rounded-xl border border-border p-5">
             <div className="text-[15px] font-semibold">{tr({ fr: "Trafic", en: "Traffic" })}</div>
             <div className="mt-4 h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -141,7 +138,7 @@ export function WebsitePage() {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+    <div className="rounded-xl border border-border p-5">
       <div className="mb-3 text-[15px] font-semibold">{title}</div>
       <div className="space-y-2.5">{children}</div>
     </div>
@@ -163,7 +160,7 @@ function ContentList({ title, table, rows, sub }: { title: string; table: "artic
   const def = TABLES[table];
   const counts = CONTENT_STATUS_OPTIONS.map((o) => ({ o, n: rows.filter((r) => r.status === o.value).length })).filter((x) => x.n);
   return (
-    <div className="rounded-2xl border border-border bg-surface shadow-card">
+    <div className="rounded-xl border border-border">
       <div className="flex items-center gap-2 border-b border-border p-4">
         <TableTile icon={def.icon} color={def.color} />
         <span className="text-[15px] font-semibold">{title}</span>

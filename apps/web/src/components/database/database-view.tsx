@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Copy, Pencil, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { TABLES, type TableKey, type ViewType } from "@erp/shared";
+import { TABLE_GROUPS, TABLES, type TableKey, type ViewType } from "@erp/shared";
+import { useNavigate } from "@tanstack/react-router";
 import { useI18n, type DictKey } from "@/lib/i18n";
 import { defaultConfig, useCreateRecord, useDeleteRecord, useList, useUpdateRecord, useViewMutations, useViews, type SavedView, type ViewConfig } from "@/lib/data";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
   const def = TABLES[table];
   const { data: views = [] } = useViews(table);
   const vm = useViewMutations();
+  const navigate = useNavigate();
 
   const saved = views.find((v) => v.id === viewId) ?? null;
   const [defaultType, setDefaultType] = useState<ViewType>("table");
@@ -93,15 +95,33 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 px-6 pb-2 pt-5">
-        <TableTile icon={def.icon} color={def.color} size="lg" />
-        <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold leading-tight tracking-tight">{tr(def.label)}</h1>
-          <div className="text-xs text-muted">
-            {data ? `${data.total} ${t("records")}` : "…"}
-            {isFetching && !isLoading ? <span className="ml-2 inline-block size-1.5 animate-pulse rounded-full bg-accent align-middle" /> : null}
-          </div>
-        </div>
+      <div className="flex shrink-0 items-center gap-3 px-6 pb-3 pt-6">
+        <Dropdown>
+          <DropdownTrigger className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 outline-none">
+            <TableTile icon={def.icon} color={def.color} />
+            <h1 className="truncate text-[22px] font-semibold tracking-tight">{tr(def.label)}</h1>
+            <ChevronDown className="size-4 text-subtle transition group-hover:text-fg" />
+          </DropdownTrigger>
+          <DropdownContent className="max-h-[70vh] w-60 overflow-y-auto">
+            {TABLE_GROUPS.map((g) => (
+              <div key={g.key}>
+                <DropdownLabel>{tr(g.label)}</DropdownLabel>
+                {Object.values(TABLES)
+                  .filter((d) => d.group === g.key)
+                  .map((d) => (
+                    <DropdownItem key={d.key} onSelect={() => navigate({ to: "/db/$table", params: { table: d.key }, search: {} })}>
+                      <TableTile icon={d.icon} color={d.color} size="sm" /> {tr(d.label)}
+                      {d.key === table && <Check className="ml-auto" />}
+                    </DropdownItem>
+                  ))}
+              </div>
+            ))}
+          </DropdownContent>
+        </Dropdown>
+        <span className="text-[13px] tabular-nums text-subtle">
+          {data ? data.total : ""}
+          {isFetching && !isLoading ? <span className="ml-2 inline-block size-1.5 animate-pulse rounded-full bg-accent align-middle" /> : null}
+        </span>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="primary" size="md" onClick={() => onCreate()}>
             <Plus /> {t("new")}
@@ -189,7 +209,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
       </div>
 
       {/* Body */}
-      <div className="relative min-h-0 flex-1 border-t border-border bg-surface">
+      <div className="relative min-h-0 flex-1 border-t border-border">
         {isLoading ? (
           <div className="space-y-2 p-6">
             {Array.from({ length: 8 }, (_, i) => (

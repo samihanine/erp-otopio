@@ -105,12 +105,9 @@ export function FinancePage() {
               { label: t("expenses"), value: kpis?.expenses, icon: ArrowUpRight, tint: "#ec4899" },
               { label: t("margin"), value: kpis?.margin, icon: Landmark, tint: "#0a1430" },
             ].map((k) => (
-              <div key={k.label} className="rounded-2xl border border-border bg-surface p-4 shadow-card">
+              <div key={k.label} className="rounded-xl border border-border p-4">
                 <div className="flex items-center justify-between text-[13px] text-muted">
                   {k.label}
-                  <span className="grid size-7 place-items-center rounded-lg text-white" style={{ background: k.tint }}>
-                    <k.icon className="size-3.5" />
-                  </span>
                 </div>
                 <div className="mt-3 text-[22px] font-semibold tabular-nums tracking-tight">{isLoading ? <Skeleton className="h-7 w-24" /> : money(k.value ?? 0)}</div>
                 {k.sub ? <div className="mt-1 text-xs text-subtle">{k.sub}</div> : null}
@@ -133,7 +130,7 @@ export function FinancePage() {
 
           {/* Chart */}
           <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            <div className="rounded-2xl border border-border bg-surface p-5 shadow-card lg:col-span-2">
+            <div className="rounded-xl border border-border p-5 lg:col-span-2">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[15px] font-semibold">{tr({ fr: "Revenus vs dépenses", en: "Revenue vs expenses" })}</div>
@@ -165,7 +162,7 @@ export function FinancePage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+            <div className="rounded-xl border border-border p-5">
               <div className="text-[15px] font-semibold">{tr({ fr: "Dépenses par catégorie", en: "Expenses by category" })}</div>
               <div className="relative mt-2 h-44">
                 <ResponsiveContainer width="100%" height="100%">
@@ -204,7 +201,7 @@ export function FinancePage() {
             <div className="space-y-3">
               <h3 className="text-[15px] font-semibold">{tr({ fr: "Structures de facturation", en: "Billing entities" })}</h3>
               {data?.byEntity.map((e) => (
-                <div key={e.id} className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
+                <div key={e.id} className="overflow-hidden rounded-xl border border-border">
                   <div className="flex items-center gap-3 p-4">
                     <span className="grid size-10 place-items-center rounded-xl text-sm font-bold text-white" style={{ background: e.color }}>
                       {e.country}
@@ -233,7 +230,7 @@ export function FinancePage() {
             </div>
 
             {/* Top clients */}
-            <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+            <div className="rounded-xl border border-border p-5">
               <h3 className="text-[15px] font-semibold">{tr({ fr: "Meilleurs clients", en: "Top clients" })}</h3>
               <div className="mt-4 space-y-3">
                 {(data?.byClient ?? []).map((c, i) => {
@@ -255,7 +252,7 @@ export function FinancePage() {
             </div>
 
             {/* Reconciliation */}
-            <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+            <div className="rounded-xl border border-border p-5">
               <div className="flex items-center justify-between">
                 <h3 className="text-[15px] font-semibold">{t("reconciliation")}</h3>
                 <span className={cn("rounded-md px-1.5 py-0.5 text-xs font-medium", issues ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700")}>{issues ? `${issues} ${tr({ fr: "à vérifier", en: "to review" })}` : "OK"}</span>

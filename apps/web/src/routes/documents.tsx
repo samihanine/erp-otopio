@@ -56,7 +56,7 @@ export function DocumentsPage() {
           </div>
 
           {/* Google Docs integration */}
-          <div className="mt-6 flex flex-wrap items-center gap-4 overflow-hidden rounded-2xl border border-border bg-surface p-4 shadow-card">
+          <div className="mt-6 flex flex-wrap items-center gap-4 overflow-hidden rounded-xl border border-border p-4">
             <span className="grid size-11 place-items-center rounded-xl bg-[#1a73e8]/10">
               <svg viewBox="0 0 48 48" className="size-6"><path fill="#1a73e8" d="M29 4H12a4 4 0 0 0-4 4v32a4 4 0 0 0 4 4h24a4 4 0 0 0 4-4V15z"/><path fill="#a1c2fa" d="M29 4v11h11z"/><path fill="#fff" d="M15 23h18v2.5H15zm0 5h18v2.5H15zm0 5h12v2.5H15z"/></svg>
             </span>
@@ -111,7 +111,7 @@ export function DocumentsPage() {
           </div>
 
           <h2 className="mb-3 mt-10 text-lg font-semibold">{tr({ fr: "Documents libres", en: "Free documents" })}</h2>
-          <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
+          <div className="overflow-hidden rounded-xl border border-border">
             {(free ?? []).map((d) => (
               <Link key={d.id} to="/documents/doc/$id" params={{ id: d.id }} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0 hover:bg-hover">
                 <span className="grid size-8 place-items-center rounded-lg" style={{ background: `${TYPE_COLORS[d.type]}1a`, color: TYPE_COLORS[d.type] }}>
@@ -147,7 +147,7 @@ function DocList({ title, kind, rows, refs }: { title: string; kind: "quote" | "
           {tr({ fr: "Tout voir", en: "View all" })} →
         </Link>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
+      <div className="overflow-hidden rounded-xl border border-border">
         {rows.map((r) => (
           <Link key={r.id} to="/documents/$kind/$id" params={{ kind, id: r.id }} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0 hover:bg-hover">
             <span className="min-w-0 flex-1">

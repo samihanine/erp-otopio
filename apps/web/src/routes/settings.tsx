@@ -63,7 +63,7 @@ export function SettingsPage() {
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {entities?.rows.map((e) => (
-                <button key={e.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "legal_entity", id: e.id } })} className="rounded-2xl border border-border bg-surface p-4 text-left shadow-card transition hover:shadow-md">
+                <button key={e.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "legal_entity", id: e.id } })} className="rounded-xl border border-border p-4 text-left transition hover:border-border-strong">
                   <div className="flex items-center gap-3">
                     <span className="grid size-10 place-items-center rounded-xl text-sm font-bold text-white" style={{ background: String(e.color ?? "#1c3266") }}>
                       {String(e.country)}
@@ -93,7 +93,7 @@ export function SettingsPage() {
           <section className="mt-10">
             <h2 className="text-lg font-semibold">{tr({ fr: "Intégrations", en: "Integrations" })}</h2>
             <p className="mb-3 text-[13px] text-muted">{tr({ fr: "Les clés se configurent dans les variables d'environnement Dokploy (prod & staging).", en: "Keys are set as Dokploy environment variables (prod & staging)." })}</p>
-            <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
+            <div className="overflow-hidden rounded-xl border border-border">
               {integrations.map((i) => (
                 <div key={i.name} className="flex items-center gap-4 border-b border-border px-4 py-3.5 last:border-0">
                   <span className="grid size-10 place-items-center rounded-xl bg-surface-2 ring-1 ring-inset ring-border">{i.icon}</span>
@@ -112,7 +112,7 @@ export function SettingsPage() {
 
           <section className="mt-10">
             <h2 className="mb-3 text-lg font-semibold">{tr({ fr: "Préférences", en: "Preferences" })}</h2>
-            <div className="space-y-3 rounded-2xl border border-border bg-surface p-4 shadow-card">
+            <div className="space-y-3 rounded-xl border border-border p-4">
               <div className="flex items-center justify-between text-[13px]">
                 <span>{t("language")}</span>
                 <Segmented value={locale} onChange={setLocale} options={[{ value: "fr", label: "Français" }, { value: "en", label: "English" }]} />
@@ -143,7 +143,7 @@ export function SettingsPage() {
                 { label: "PostgreSQL", value: health?.db ? "OK" : "—", icon: Database },
                 { label: "Version", value: health?.version?.slice(0, 7) ?? "…", icon: Server },
               ].map((x) => (
-                <div key={x.label} className="rounded-2xl border border-border bg-surface p-4 shadow-card">
+                <div key={x.label} className="rounded-xl border border-border p-4">
                   <div className="flex items-center gap-2 text-xs text-muted">
                     <x.icon className="size-3.5" /> {x.label}
                   </div>
