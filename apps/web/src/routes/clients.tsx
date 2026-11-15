@@ -10,6 +10,7 @@ import { useCreateRecord } from "@/lib/data";
 import { cn, faviconUrl, hostname } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, Icon, OptionBadge, Segmented, Skeleton } from "@/components/ui/misc";
+import { Md } from "./automation";
 import { FileIcon, filePreviewUrl } from "./drive-ui";
 
 type ClientRow = Row & { name: string; status: string; website?: string; industry?: string; revenueCAD: number; outstandingCAD: number; activeProjects: number; lastContact: string | null; communications: number };
@@ -199,7 +200,7 @@ export function ClientPage() {
               {org.aiSummaryAt && <span className="text-xs font-normal text-subtle">· {fmtRelative(org.aiSummaryAt, locale)}</span>}
             </div>
             {org.aiSummary ? (
-              <div className="prose-doc whitespace-pre-wrap text-[13.5px] leading-relaxed text-fg">{String(org.aiSummary)}</div>
+              <Md text={String(org.aiSummary)} />
             ) : (
               <div className="text-[13px] text-subtle">{tr({ fr: "Le résumé sera généré automatiquement lors de la prochaine synchronisation (toutes les heures).", en: "The summary will be generated at the next sync (hourly)." })}</div>
             )}
@@ -256,7 +257,7 @@ export function ClientPage() {
                         <span className="truncate text-[13px] font-medium">{String(c.subject)}</span>
                         <OptionBadge option={commType.find((o) => o.value === c.type)} className="shrink-0" />
                       </span>
-                      <span className="mt-0.5 line-clamp-2 block text-xs text-muted">{String(c.aiSummary || c.summary || "")}</span>
+                      <span className="mt-0.5 line-clamp-2 block text-xs text-muted">{String(c.aiSummary || c.summary || "").replace(/\*\*/g, "")}</span>
                     </span>
                     <span className="shrink-0 text-xs text-subtle">{fmtDate(c.occurredAt, locale, { day: "numeric", month: "short" })}</span>
                   </Link>

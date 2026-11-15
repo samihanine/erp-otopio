@@ -8,7 +8,7 @@ import { fmtRelative, useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 
 /** Minimal markdown: **bold**, bullet lines and paragraphs. */
-function Md({ text }: { text: string }) {
+export function Md({ text }: { text: string }) {
   const inline = (s: string): ReactNode[] => s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => (p.startsWith("**") ? <strong key={i} className="font-semibold text-fg">{p.slice(2, -2)}</strong> : <Fragment key={i}>{p}</Fragment>));
   return (
     <div className="space-y-1.5 text-[13px] leading-relaxed text-muted">

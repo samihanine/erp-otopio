@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Lock, Plus, RefreshCw, Video } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +37,10 @@ export function CalendarPage() {
   const [members, setMembers] = useState<string[]>(MEMBERS.map((m) => m.email));
   const [client, setClient] = useState<string>("");
   const [creating, setCreating] = useState<Date | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (view === "week" && scroller.current) scroller.current.scrollTop = 7 * HOUR_PX;
+  }, [view]);
 
   const range = useMemo(() => {
     if (view === "week") {
@@ -132,7 +136,7 @@ export function CalendarPage() {
         </div>
 
         {view === "week" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
             <div className="sticky top-0 z-10 grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-border bg-surface">
               <div />
               {days.map((d) => (
@@ -176,7 +180,7 @@ export function CalendarPage() {
                       const s = new Date(String(e.startAt));
                       const en = new Date(String(e.endAt));
                       const top = (s.getHours() + s.getMinutes() / 60) * HOUR_PX;
-                      const h = Math.max(20, ((en.getTime() - s.getTime()) / 3600e3) * HOUR_PX - 2);
+                      const h = Math.max(20, Math.min(24 * HOUR_PX - top, ((en.getTime() - s.getTime()) / 3600e3) * HOUR_PX) - 2);
                       const overlap = list.filter((o) => new Date(String(o.startAt)) < en && new Date(String(o.endAt)) > s);
                       const idx = overlap.indexOf(e);
                       const w = 100 / overlap.length;
