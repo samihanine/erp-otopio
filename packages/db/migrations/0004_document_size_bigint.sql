@@ -1,0 +1,1 @@
+ALTER TABLE "document" ALTER COLUMN "size" SET DATA TYPE bigint;

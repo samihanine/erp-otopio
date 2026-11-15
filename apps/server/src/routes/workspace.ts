@@ -154,6 +154,16 @@ workspace.post("/sync/:job", async (c) => {
   return c.json({ ok: true });
 });
 
+workspace.get("/jobs", async (c) => {
+  const jobs = await queue.getJobs(["active", "waiting", "delayed", "completed", "failed"], 0, 60);
+  return c.json(
+    jobs
+      .filter(Boolean)
+      .map((j) => ({ id: j.id, name: j.name, state: j.failedReason ? "failed" : j.finishedOn ? "completed" : j.processedOn ? "active" : "waiting", error: j.failedReason ?? null, at: j.finishedOn ?? j.processedOn ?? j.timestamp, result: j.returnvalue ? JSON.stringify(j.returnvalue).slice(0, 300) : null }))
+      .sort((a, b) => b.at - a.at),
+  );
+});
+
 workspace.get("/automation", async (c) => {
   const rows = await db
     .select()

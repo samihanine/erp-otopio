@@ -60,6 +60,8 @@ export function AutomationJournal() {
   const { tr, locale } = useI18n();
   const qc = useQueryClient();
   const { data, isFetching } = useQuery({ queryKey: ["ws", "automation"], queryFn: () => api<{ entries: Entry[]; sync: { key: string; updatedAt: string }[] }>("/ws/automation") });
+  const { data: jobs = [] } = useQuery({ queryKey: ["ws", "jobs"], queryFn: () => api<{ id: string; name: string; state: string; error: string | null; at: number }[]>("/ws/jobs"), refetchInterval: 30_000 });
+  const lastByName = JOBS.map((j) => ({ ...j, last: jobs.find((x) => x.name === j.job && x.state !== "waiting") }));
   const run = (job: string) => api(`/ws/sync/${job}`, { method: "POST" }).then(() => toast.success(tr({ fr: "Synchronisation lancée", en: "Sync started" })));
   const undo = async (id: string) => {
     await api(`/ws/automation/${id}/undo`, { method: "POST" });
@@ -82,6 +84,17 @@ export function AutomationJournal() {
       <p className="mb-3 text-[13px] text-muted">
         {tr({ fr: "Tout ce que la synchronisation a créé ou modifié automatiquement. Chaque action réversible peut être annulée.", en: "Everything the sync created or changed automatically. Reversible actions can be undone." })}
       </p>
+      <div className="mb-3 grid gap-2 sm:grid-cols-4">
+        {lastByName.map((j) => (
+          <div key={j.job} className="rounded-lg border border-border px-3 py-2 text-xs" title={j.last?.error ?? ""}>
+            <div className="flex items-center gap-1.5 font-medium">
+              <span className={j.last?.state === "failed" ? "size-1.5 rounded-full bg-rose-500" : j.last?.state === "active" ? "size-1.5 rounded-full bg-amber-500" : j.last ? "size-1.5 rounded-full bg-emerald-500" : "size-1.5 rounded-full bg-zinc-300"} />
+              {j.label}
+            </div>
+            <div className="mt-0.5 truncate text-subtle">{j.last ? (j.last.state === "failed" ? j.last.error : fmtRelative(new Date(j.last.at).toISOString(), locale)) : "—"}</div>
+          </div>
+        ))}
+      </div>
       <div className="max-h-[480px] overflow-y-auto rounded-xl border border-border">
         {(data?.entries ?? []).map((e) => {
           const undone = e.action.startsWith("automation-undone:");
