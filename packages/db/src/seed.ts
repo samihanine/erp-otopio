@@ -43,6 +43,7 @@ const BUSINESS_TABLES = [
   "bill",
   "invoice",
   "quote",
+  "communication",
   "ticket",
   "task",
   "project",

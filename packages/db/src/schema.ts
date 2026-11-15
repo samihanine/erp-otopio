@@ -116,6 +116,19 @@ export const ticketCategory = pgEnum("ticket_category", ["bug", "feature", "cont
 export const documentKind = pgEnum("document_kind", ["template", "document"]);
 export const documentType = pgEnum("document_type", ["quote", "invoice", "contract", "sow", "nda", "report", "free"]);
 export const transactionSide = pgEnum("transaction_side", ["credit", "debit"]);
+export const communicationType = pgEnum("communication_type", [
+  "email",
+  "google_meet",
+  "teams",
+  "zoom",
+  "phone",
+  "whatsapp",
+  "sms",
+  "linkedin",
+  "in_person",
+  "other",
+]);
+export const communicationDirection = pgEnum("communication_direction", ["inbound", "outbound", "internal"]);
 
 /* -------------------------------------------------------------------------- */
 /*  Billing structures (Megascale FR, Otopio Inc. CA, …)                      */
@@ -205,6 +218,38 @@ export const person = pgTable(
     ...timestamps,
   },
   (t) => [index("person_org_idx").on(t.organizationId)],
+);
+
+/** Log of every exchange with a contact: emails, meetings, calls, messages. */
+export const communication = pgTable(
+  "communication",
+  {
+    id: id(),
+    subject: text("subject").notNull(),
+    type: communicationType("type").notNull().default("email"),
+    direction: communicationDirection("direction").notNull().default("outbound"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    durationMinutes: integer("duration_minutes"),
+    personId: uuid("person_id").references(() => person.id, { onDelete: "set null" }),
+    organizationId: uuid("organization_id").references(() => organization.id, { onDelete: "set null" }),
+    projectId: uuid("project_id"),
+    participants: text("participants").array().notNull().default([]),
+    mailbox: text("mailbox"), // contact@ / sami@ / maissane@…
+    meetingUrl: text("meeting_url"),
+    sourceUrl: text("source_url"), // Gmail thread, WhatsApp export…
+    externalId: text("external_id"), // e.g. Gmail thread id (dedup)
+    attachments: text("attachments").array().notNull().default([]),
+    attachmentUrl: text("attachment_url"),
+    summary: text("summary"),
+    nextSteps: text("next_steps"),
+    ...timestamps,
+  },
+  (t) => [
+    index("communication_person_idx").on(t.personId),
+    index("communication_org_idx").on(t.organizationId),
+    index("communication_date_idx").on(t.occurredAt),
+    uniqueIndex("communication_external_uq").on(t.externalId),
+  ],
 );
 
 /* -------------------------------------------------------------------------- */

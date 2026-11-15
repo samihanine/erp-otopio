@@ -26,6 +26,7 @@ import { computeTotals, getField, TABLES, type FieldDef, type TableKey } from "@
 export const TABLE_MAP: Record<TableKey, PgTable> = {
   organization: schema.organization,
   person: schema.person,
+  communication: schema.communication,
   project: schema.project,
   task: schema.task,
   ticket: schema.ticket,

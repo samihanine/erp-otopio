@@ -10,7 +10,7 @@ import { authClient } from "./lib/auth-client";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { LoginPage } from "./routes/login";
 import { HomePage } from "./routes/home";
-import { DatabaseHomePage, DatabasePage, RecordPage } from "./routes/db";
+import { DatabasePage, RecordPage } from "./routes/db";
 import { DocumentsPage, DocumentEditorPage, FreeDocPage } from "./routes/documents";
 import { FinancePage } from "./routes/finance";
 import { WebsitePage } from "./routes/website";
@@ -35,7 +35,7 @@ const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: "/login"
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: "app", beforeLoad: requireAuth, component: () => <Outlet /> });
 
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: HomePage });
-const dbIndexRoute = createRoute({ getParentRoute: () => appRoute, path: "/db", component: DatabaseHomePage });
+const dbIndexRoute = createRoute({ getParentRoute: () => appRoute, path: "/db", beforeLoad: () => { throw redirect({ to: "/db/$table", params: { table: "project" }, search: {} }); } });
 export const dbRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/db/$table",

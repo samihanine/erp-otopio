@@ -47,6 +47,7 @@ export type FieldDef = {
 export type TableKey =
   | "organization"
   | "person"
+  | "communication"
   | "project"
   | "task"
   | "ticket"
@@ -201,6 +202,62 @@ export const TABLES: Record<TableKey, TableDef> = {
       { key: "isPrimaryContact", label: L("Contact principal", "Primary contact"), type: "checkbox" },
       { key: "avatarUrl", label: L("Photo", "Photo"), type: "url", hidden: true },
       { key: "notes", label: L("Notes", "Notes"), type: "longtext", hidden: true },
+      ...timestampsFields,
+    ],
+  },
+
+  communication: {
+    key: "communication",
+    label: L("Communications", "Communications"),
+    singular: L("Communication", "Communication"),
+    icon: "MessagesSquare",
+    color: "teal",
+    group: "crm",
+    primary: "subject",
+    subtitle: "personId",
+    views: ["table", "list", "calendar", "kanban"],
+    kanbanField: "type",
+    dateField: "occurredAt",
+    searchFields: ["subject", "summary", "nextSteps"],
+    defaultSort: { field: "occurredAt", dir: "desc" },
+    fields: [
+      { key: "subject", label: L("Objet", "Subject"), type: "text", required: true, width: 280 },
+      {
+        key: "type",
+        label: L("Canal", "Channel"),
+        type: "select",
+        options: [
+          o("email", "Courriel", "Email", "blue"),
+          o("google_meet", "Google Meet", "Google Meet", "green"),
+          o("teams", "Teams", "Teams", "indigo"),
+          o("zoom", "Zoom", "Zoom", "sky"),
+          o("phone", "Appel", "Call", "orange"),
+          o("whatsapp", "WhatsApp", "WhatsApp", "teal"),
+          o("sms", "SMS", "SMS", "yellow"),
+          o("linkedin", "LinkedIn", "LinkedIn", "purple"),
+          o("in_person", "En personne", "In person", "pink"),
+          o("other", "Autre", "Other", "gray"),
+        ],
+      },
+      {
+        key: "direction",
+        label: L("Sens", "Direction"),
+        type: "select",
+        options: [o("inbound", "Reçu", "Inbound", "green"), o("outbound", "Envoyé", "Outbound", "blue"), o("internal", "Interne", "Internal", "gray")],
+      },
+      { key: "occurredAt", label: L("Date", "Date"), type: "datetime", width: 170 },
+      { key: "personId", label: L("Personne", "Person"), type: "relation", relation: "person", width: 170 },
+      { key: "organizationId", label: L("Organisation", "Organization"), type: "relation", relation: "organization", width: 160 },
+      { key: "projectId", label: L("Projet", "Project"), type: "relation", relation: "project" },
+      { key: "durationMinutes", label: L("Durée (min)", "Duration (min)"), type: "number", hidden: true },
+      { key: "meetingUrl", label: L("Lien de réunion", "Meeting link"), type: "url", hidden: true },
+      { key: "sourceUrl", label: L("Source (Gmail…)", "Source (Gmail…)"), type: "url" },
+      { key: "mailbox", label: L("Boîte", "Mailbox"), type: "text", hidden: true },
+      { key: "participants", label: L("Participants", "Participants"), type: "tags", hidden: true },
+      { key: "attachments", label: L("Pièces jointes", "Attachments"), type: "tags" },
+      { key: "attachmentUrl", label: L("Lien pièce jointe", "Attachment link"), type: "url", hidden: true },
+      { key: "summary", label: L("Résumé", "Summary"), type: "longtext", hidden: true },
+      { key: "nextSteps", label: L("Prochaines étapes", "Next steps"), type: "longtext", hidden: true },
       ...timestampsFields,
     ],
   },

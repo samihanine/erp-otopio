@@ -79,7 +79,7 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
                 ))}
               </Command.Group>
               <Command.Group heading={tr({ fr: "Créer", en: "Create" })} className={group}>
-                {(["task", "project", "organization", "person", "invoice", "quote", "bill", "ticket", "article", "post"] as TableKey[]).map((k) => (
+                {(["task", "communication", "project", "organization", "person", "invoice", "quote", "bill", "ticket", "article", "post"] as TableKey[]).map((k) => (
                   <Command.Item key={k} value={`create ${tr(TABLES[k].singular)}`} onSelect={() => go(() => createIn(k))} className={item}>
                     <Plus /> {tr({ fr: "Nouveau·elle", en: "New" })} {tr(TABLES[k].singular).toLowerCase()}
                   </Command.Item>
@@ -100,6 +100,7 @@ function useCreateRecordFor() {
     project: useCreateRecord("project"),
     organization: useCreateRecord("organization"),
     person: useCreateRecord("person"),
+    communication: useCreateRecord("communication"),
     invoice: useCreateRecord("invoice"),
     quote: useCreateRecord("quote"),
     bill: useCreateRecord("bill"),
