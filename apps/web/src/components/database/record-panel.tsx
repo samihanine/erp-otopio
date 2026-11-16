@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, Icon, Skeleton, TableTile } from "@/components/ui/misc";
 import { Dropdown, DropdownContent, DropdownItem, DropdownSeparator, DropdownTrigger } from "@/components/ui/dropdown";
 import { FieldDisplay, PropertyValue } from "./fields";
+import { SectionsEditor, TranslationsPanel } from "./cms-fields";
 import { fieldIcon } from "./toolbar";
 
 export function RecordDetail({ table, id, onClose, full }: { table: TableKey; id: string; onClose?: () => void; full?: boolean }) {
@@ -36,7 +37,8 @@ export function RecordDetail({ table, id, onClose, full }: { table: TableKey; id
   const save = (key: string, v: unknown) => update.mutate({ id, patch: { [key]: v } });
   const primary = def.fields.find((f) => f.key === def.primary)!;
   const longFields = def.fields.filter((f) => f.type === "longtext");
-  const propFields = def.fields.filter((f) => f.key !== def.primary && f.type !== "longtext" && f.type !== "lines" && (f.key !== "lastName" || table !== "person"));
+  const propFields = def.fields.filter((f) => f.key !== def.primary && f.type !== "longtext" && f.type !== "lines" && f.type !== "sections" && (f.key !== "lastName" || table !== "person"));
+  const sectionFields = def.fields.filter((f) => f.type === "sections");
   const docKind = table === "quote" || table === "invoice" ? table : null;
 
   return (
@@ -132,6 +134,15 @@ export function RecordDetail({ table, id, onClose, full }: { table: TableKey; id
               <LongText value={String(row[f.key] ?? "")} onSave={(v) => save(f.key, v)} placeholder={tr({ fr: "Écrire…", en: "Write…" })} />
             </div>
           ))}
+
+          {sectionFields.map((f) => (
+            <div key={f.key} className="mt-6">
+              <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-subtle">{tr(f.label)}</div>
+              <SectionsEditor key={id} value={row[f.key]} onSave={(v) => save(f.key, v)} table={table} recordId={id} />
+            </div>
+          ))}
+
+          {def.translatable ? <TranslationsPanel table={table} row={row} onSave={(v) => save("translations", v)} /> : null}
 
           {/* Tabs */}
           <div className="mt-8 flex gap-1 border-b border-border">

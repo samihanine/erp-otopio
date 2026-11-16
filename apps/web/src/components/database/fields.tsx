@@ -9,6 +9,7 @@ import { Avatar, Chip, OptionBadge, TableTile } from "@/components/ui/misc";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { inputClass } from "@/components/ui/input";
+import { ImageField } from "./cms-fields";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const DONE = new Set(["done", "paid", "delivered", "resolved", "closed", "cancelled", "accepted", "rejected", "published"]);
@@ -125,6 +126,10 @@ export function FieldDisplay({ field, row, refs, table }: { field: FieldDef; row
       );
     case "lines":
       return <span className="text-muted">{(v as unknown[]).length} {locale === "fr" ? "lignes" : "lines"}</span>;
+    case "sections":
+      return <span className="text-muted">{(v as unknown[]).length} sections</span>;
+    case "image":
+      return <img src={String(v)} alt="" className="h-6 w-9 rounded object-cover ring-1 ring-border" />;
     case "longtext":
       return <span className="truncate text-muted">{String(v)}</span>;
     default:
@@ -138,7 +143,7 @@ export function FieldDisplay({ field, row, refs, table }: { field: FieldDef; row
 
 const POPOVER_TYPES = new Set<FieldDef["type"]>(["select", "relation", "tags", "longtext", "date", "datetime"]);
 export const isPopoverField = (f: FieldDef) => POPOVER_TYPES.has(f.type);
-export const isEditable = (f: FieldDef) => !f.readOnly && f.type !== "lines";
+export const isEditable = (f: FieldDef) => !f.readOnly && f.type !== "lines" && f.type !== "sections";
 
 export function SelectEditor({ field, value, onChange }: { field: FieldDef; value: unknown; onChange: (v: unknown, close?: boolean) => void }) {
   const { tr, t } = useI18n();
@@ -372,6 +377,10 @@ export function PropertyValue({ field, row, refs, table, onSave, placeholder }: 
   const [editing, setEditing] = useState(false);
   const editable = isEditable(field);
   const v = row[field.key];
+
+  if (field.type === "image") {
+    return editable ? <ImageField value={v} onSave={onSave} table={table} recordId={row.id} /> : <FieldDisplay field={field} row={row} refs={refs} table={table} />;
+  }
 
   if (field.type === "checkbox") {
     return (

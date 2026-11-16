@@ -178,14 +178,21 @@ data.post("/:table", async (c) => {
     values.side ??= "debit";
     values.amount ??= 0;
   }
-  if (key === "article" && !values.slug) {
-    const title = String(values.title ?? "article");
+  if ((key === "article" || key === "artifact" || key === "team_member") && !values.slug) {
+    const title = String(values.title ?? values.name ?? key);
     values.slug = `${title
       .normalize("NFD")
       .replace(/[̀-ͯ]/g, "")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "")}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+  if (key === "bill" && !values.legalEntityId) {
+    // personal expenses default to the freelance activity
+    if (values.scope === "perso" || values.scope === "mixed") {
+      const [shf] = await db.select({ id: schema.legalEntity.id }).from(schema.legalEntity).where(eq(schema.legalEntity.code, "SHF"));
+      if (shf) values.legalEntityId = shf.id;
+    }
   }
   const primary = TABLES[key].primary;
   if (values[primary] == null || values[primary] === "") values[primary] = key === "person" ? "Nouveau contact" : "Sans titre";

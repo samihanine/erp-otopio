@@ -26,7 +26,11 @@ export type FieldType =
   | "email"
   | "phone"
   | "repo"
-  | "lines";
+  | "lines"
+  /** structured page blocks (website artifacts) */
+  | "sections"
+  /** image URL with upload to Cloudflare R2 */
+  | "image";
 
 export type FieldDef = {
   key: string;
@@ -59,7 +63,10 @@ export type TableKey =
   | "post"
   | "document"
   | "event"
-  | "legal_entity";
+  | "legal_entity"
+  | "artifact"
+  | "team_member"
+  | "credit_card";
 
 export type ViewType = "table" | "kanban" | "gantt" | "calendar" | "gallery" | "list";
 
@@ -69,8 +76,10 @@ export type TableDef = {
   singular: I18n;
   icon: string; // lucide icon name
   color: Color;
-  group: "crm" | "delivery" | "finance" | "marketing" | "settings";
+  group: "crm" | "delivery" | "finance" | "marketing" | "website" | "settings";
   primary: string;
+  /** fields that can be translated (stored in the `translations` json column, base = French) */
+  translatable?: string[];
   /** secondary field shown under the title (cards, relation chips) */
   subtitle?: string;
   fields: FieldDef[];
@@ -548,9 +557,35 @@ export const TABLES: Record<TableKey, TableDef> = {
           o("marketing", "Marketing", "Marketing", "pink"),
           o("office", "Bureau", "Office", "yellow"),
           o("travel", "Déplacement", "Travel", "sky"),
+          o("subscription", "Abonnement", "Subscription", "indigo"),
+          o("transport", "Transport", "Transport", "sky"),
+          o("flight", "Billet d'avion", "Flight", "sky"),
+          o("accommodation", "Hébergement voyage", "Accommodation", "teal"),
+          o("restaurant", "Restaurant", "Restaurant", "orange"),
+          o("groceries", "Épicerie", "Groceries", "green"),
+          o("shopping", "Achats", "Shopping", "pink"),
+          o("concert", "Concert / spectacle", "Concert / show", "purple"),
+          o("leisure", "Loisirs", "Leisure", "purple"),
+          o("health", "Santé", "Health", "red"),
+          o("housing", "Logement", "Housing", "yellow"),
+          o("utilities", "Énergie / charges", "Utilities", "yellow"),
+          o("telecom", "Téléphone / internet", "Telecom", "blue"),
+          o("education", "Études", "Education", "indigo"),
+          o("bank_fees", "Frais bancaires", "Bank fees", "gray"),
+          o("taxes", "Impôts / taxes", "Taxes", "red"),
+          o("gift", "Cadeau", "Gift", "pink"),
           o("other", "Autre", "Other", "gray"),
         ],
       },
+      {
+        key: "scope",
+        label: L("Perso / pro", "Personal / pro"),
+        type: "select",
+        options: [o("pro", "Pro", "Pro", "blue"), o("perso", "Perso", "Personal", "pink"), o("mixed", "Mixte", "Mixed", "purple")],
+        width: 100,
+      },
+      { key: "cardId", label: L("Carte", "Card"), type: "relation", relation: "credit_card", width: 150 },
+      { key: "active", label: L("Abonnement en cours", "Active subscription"), type: "checkbox", hidden: true },
       {
         key: "status",
         label: L("Statut", "Status"),
@@ -640,7 +675,7 @@ export const TABLES: Record<TableKey, TableDef> = {
     singular: L("Article", "Article"),
     icon: "Newspaper",
     color: "sky",
-    group: "marketing",
+    group: "website",
     primary: "title",
     subtitle: "excerpt",
     views: ["table", "kanban", "calendar", "gallery"],
@@ -649,19 +684,138 @@ export const TABLES: Record<TableKey, TableDef> = {
     coverField: "coverUrl",
     searchFields: ["title", "excerpt", "targetQuery"],
     defaultSort: { field: "updatedAt", dir: "desc" },
+    translatable: ["title", "excerpt", "content", "category"],
     fields: [
       { key: "title", label: L("Titre", "Title"), type: "text", required: true, width: 300 },
       { key: "status", label: L("Statut", "Status"), type: "select", options: CONTENT_STATUS_OPTIONS },
-      { key: "locale", label: L("Langue", "Language"), type: "select", options: [o("fr", "Français", "French", "blue"), o("en", "Anglais", "English", "red")] },
-      { key: "targetQuery", label: L("Requête cible", "Target query"), type: "text", width: 200 },
-      { key: "keywords", label: L("Mots-clés", "Keywords"), type: "tags", width: 220 },
-      { key: "seoScore", label: L("Score SEO/GEO", "SEO/GEO score"), type: "number" },
-      { key: "authorId", label: L("Auteur", "Author"), type: "relation", relation: "person" },
+      { key: "category", label: L("Catégorie", "Category"), type: "text", width: 150 },
       { key: "publishedAt", label: L("Publication", "Published"), type: "date" },
-      { key: "slug", label: L("Slug", "Slug"), type: "text", hidden: true },
+      { key: "authorId", label: L("Auteur", "Author"), type: "relation", relation: "person" },
+      { key: "coverUrl", label: L("Couverture", "Cover"), type: "image" },
+      { key: "slug", label: L("Slug (URL)", "Slug (URL)"), type: "text" },
       { key: "excerpt", label: L("Chapô", "Excerpt"), type: "longtext", hidden: true },
-      { key: "coverUrl", label: L("Couverture", "Cover"), type: "url", hidden: true },
-      { key: "content", label: L("Contenu", "Content"), type: "longtext", hidden: true },
+      { key: "content", label: L("Contenu (markdown)", "Content (markdown)"), type: "longtext", hidden: true },
+      { key: "readingMinutes", label: L("Temps de lecture (min)", "Reading time (min)"), type: "number", hidden: true },
+      { key: "targetQuery", label: L("Requête cible", "Target query"), type: "text", width: 200, hidden: true },
+      { key: "keywords", label: L("Mots-clés", "Keywords"), type: "tags", width: 220, hidden: true },
+      { key: "seoScore", label: L("Score SEO/GEO", "SEO/GEO score"), type: "number", hidden: true },
+      { key: "locale", label: L("Langue d'origine", "Source language"), type: "select", options: [o("fr", "Français", "French", "blue"), o("en", "Anglais", "English", "red")], hidden: true },
+      ...timestampsFields,
+    ],
+  },
+
+  artifact: {
+    key: "artifact",
+    label: L("Réalisations", "Showcase"),
+    singular: L("Réalisation", "Showcase item"),
+    icon: "Sparkles",
+    color: "purple",
+    group: "website",
+    primary: "title",
+    subtitle: "customer",
+    views: ["gallery", "table", "kanban", "list"],
+    kanbanField: "status",
+    coverField: "imageUrl",
+    searchFields: ["title", "customer", "summary"],
+    defaultSort: { field: "position", dir: "asc" },
+    translatable: ["title", "summary", "description", "tags", "sections"],
+    fields: [
+      { key: "title", label: L("Titre", "Title"), type: "text", required: true, width: 260 },
+      { key: "customer", label: L("Client affiché", "Displayed client"), type: "text", width: 150 },
+      { key: "status", label: L("Statut", "Status"), type: "select", options: CONTENT_STATUS_OPTIONS },
+      { key: "tags", label: L("Catégories", "Categories"), type: "tags", width: 240 },
+      { key: "position", label: L("Ordre", "Order"), type: "number", width: 80 },
+      { key: "imageUrl", label: L("Image principale", "Main image"), type: "image" },
+      { key: "url", label: L("Lien du projet", "Project link"), type: "url" },
+      { key: "startedAt", label: L("Début", "Start"), type: "date" },
+      { key: "endedAt", label: L("Fin", "End"), type: "date", hidden: true },
+      { key: "organizationId", label: L("Organisation", "Organization"), type: "relation", relation: "organization", hidden: true },
+      { key: "projectId", label: L("Projet ERP", "ERP project"), type: "relation", relation: "project", hidden: true },
+      { key: "slug", label: L("Slug (URL)", "Slug (URL)"), type: "text", hidden: true },
+      { key: "hexColor", label: L("Couleur", "Color"), type: "text", hidden: true },
+      { key: "lucideIcon", label: L("Icône (lucide)", "Icon (lucide)"), type: "text", hidden: true },
+      { key: "summary", label: L("Résumé", "Summary"), type: "longtext", hidden: true },
+      { key: "description", label: L("Description", "Description"), type: "longtext", hidden: true },
+      { key: "sections", label: L("Sections de la page", "Page sections"), type: "sections", hidden: true },
+      ...timestampsFields,
+    ],
+  },
+
+  team_member: {
+    key: "team_member",
+    label: L("Équipe (site)", "Team (site)"),
+    singular: L("Membre", "Member"),
+    icon: "UsersRound",
+    color: "teal",
+    group: "website",
+    primary: "name",
+    subtitle: "role",
+    views: ["gallery", "table", "list"],
+    coverField: "imageUrl",
+    searchFields: ["name", "role", "bio"],
+    defaultSort: { field: "position", dir: "asc" },
+    translatable: ["role", "bio"],
+    fields: [
+      { key: "name", label: L("Nom", "Name"), type: "text", required: true, width: 200 },
+      { key: "role", label: L("Rôle", "Role"), type: "text", width: 240 },
+      {
+        key: "group",
+        label: L("Groupe", "Group"),
+        type: "select",
+        options: [o("founders", "Fondateurs", "Founders", "indigo"), o("team", "L'équipe", "Team", "teal")],
+      },
+      { key: "status", label: L("Statut", "Status"), type: "select", options: CONTENT_STATUS_OPTIONS },
+      { key: "position", label: L("Ordre", "Order"), type: "number", width: 80 },
+      { key: "imageUrl", label: L("Photo", "Photo"), type: "image" },
+      { key: "linkedin", label: L("LinkedIn", "LinkedIn"), type: "url" },
+      { key: "personId", label: L("Contact ERP", "ERP contact"), type: "relation", relation: "person", hidden: true },
+      { key: "slug", label: L("Identifiant", "Identifier"), type: "text", hidden: true },
+      { key: "bio", label: L("Bio", "Bio"), type: "longtext", hidden: true },
+      ...timestampsFields,
+    ],
+  },
+
+  credit_card: {
+    key: "credit_card",
+    label: L("Cartes de paiement", "Payment cards"),
+    singular: L("Carte", "Card"),
+    icon: "CreditCard",
+    color: "gray",
+    group: "finance",
+    primary: "label",
+    subtitle: "last4",
+    views: ["table", "gallery"],
+    searchFields: ["label", "issuer", "last4"],
+    defaultSort: { field: "label", dir: "asc" },
+    fields: [
+      { key: "label", label: L("Nom", "Name"), type: "text", required: true, width: 200 },
+      {
+        key: "brand",
+        label: L("Réseau", "Network"),
+        type: "select",
+        options: [
+          o("visa", "Visa", "Visa", "blue"),
+          o("mastercard", "Mastercard", "Mastercard", "orange"),
+          o("amex", "American Express", "American Express", "sky"),
+          o("interac", "Interac", "Interac", "yellow"),
+          o("paypal", "PayPal", "PayPal", "indigo"),
+          o("apple_pay", "Apple Pay", "Apple Pay", "gray"),
+          o("other", "Autre", "Other", "gray"),
+        ],
+      },
+      { key: "last4", label: L("4 derniers chiffres", "Last 4"), type: "text", width: 110 },
+      { key: "issuer", label: L("Banque", "Issuer"), type: "text" },
+      { key: "holder", label: L("Titulaire", "Holder"), type: "text" },
+      { key: "expiry", label: L("Expiration", "Expiry"), type: "text", width: 90 },
+      {
+        key: "scope",
+        label: L("Usage", "Usage"),
+        type: "select",
+        options: [o("perso", "Perso", "Personal", "pink"), o("pro", "Pro", "Pro", "blue"), o("mixed", "Mixte", "Mixed", "purple")],
+      },
+      { key: "legalEntityId", label: L("Structure", "Entity"), type: "relation", relation: "legal_entity" },
+      { key: "active", label: L("Active", "Active"), type: "checkbox" },
+      { key: "notes", label: L("Notes", "Notes"), type: "longtext", hidden: true },
       ...timestampsFields,
     ],
   },
@@ -835,6 +989,7 @@ export const TABLE_GROUPS: { key: TableDef["group"]; label: I18n }[] = [
   { key: "delivery", label: L("Production", "Delivery") },
   { key: "finance", label: L("Finance", "Finance") },
   { key: "marketing", label: L("Marketing", "Marketing") },
+  { key: "website", label: L("Site web", "Website") },
   { key: "settings", label: L("Paramètres", "Settings") },
 ];
 
@@ -885,6 +1040,8 @@ export const OPS_BY_TYPE: Record<FieldType, FilterOp[]> = {
   relation: ["in", "not_in", "is_empty", "is_not_empty"],
   checkbox: ["is_true", "is_false"],
   lines: ["is_empty", "is_not_empty"],
+  sections: ["is_empty", "is_not_empty"],
+  image: ["is_empty", "is_not_empty"],
 };
 
 export const OP_LABELS: Record<FilterOp, I18n> = {

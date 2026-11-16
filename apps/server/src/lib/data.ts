@@ -40,6 +40,9 @@ export const TABLE_MAP: Record<TableKey, PgTable> = {
   document: schema.document,
   event: schema.event,
   legal_entity: schema.legalEntity,
+  artifact: schema.artifact,
+  team_member: schema.teamMember,
+  credit_card: schema.creditCard,
 };
 
 export const isTableKey = (k: string): k is TableKey => k in TABLE_MAP;
@@ -205,13 +208,16 @@ export async function resolveRefs(table: TableKey, rows: Record<string, unknown>
 /*  Write sanitation                                                          */
 /* -------------------------------------------------------------------------- */
 
-const writableTypes = new Set<FieldDef["type"]>(["text", "longtext", "number", "currency", "percent", "date", "datetime", "select", "tags", "relation", "checkbox", "url", "email", "phone", "repo", "lines"]);
+const writableTypes = new Set<FieldDef["type"]>(["text", "longtext", "number", "currency", "percent", "date", "datetime", "select", "tags", "relation", "checkbox", "url", "email", "phone", "repo", "lines", "sections", "image"]);
 
 /** Keeps only known, writable fields and coerces values to the column type. */
 export function sanitize(table: TableKey, input: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
   const def = TABLES[table];
-  const extraKeys = table === "quote" || table === "invoice" ? ["taxes", "introduction", "scope", "terms"] : table === "legal_entity" ? ["taxIds", "defaultTaxes", "bankDetails"] : [];
+  const extraKeys = [
+    ...(table === "quote" || table === "invoice" ? ["taxes", "introduction", "scope", "terms"] : table === "legal_entity" ? ["taxIds", "defaultTaxes", "bankDetails"] : []),
+    ...(def.translatable ? ["translations"] : []),
+  ];
   for (const [k, raw] of Object.entries(input)) {
     if (extraKeys.includes(k)) {
       out[k] = raw;

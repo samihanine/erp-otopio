@@ -6,8 +6,7 @@ import { env, r2Configured } from "../lib/env";
 
 export const files = new Hono<AppEnv>();
 
-const client = () =>
-  new S3Client({ endpoint: env.r2.endpoint, accessKeyId: env.r2.accessKeyId, secretAccessKey: env.r2.secretAccessKey, bucket: env.r2.bucket });
+const client = (bucket = env.r2.bucket) => new S3Client({ endpoint: env.r2.endpoint, accessKeyId: env.r2.accessKeyId, secretAccessKey: env.r2.secretAccessKey, bucket });
 
 files.post("/", async (c) => {
   if (!r2Configured()) return c.json({ error: "Stockage R2 non configuré" }, 503);
@@ -16,7 +15,14 @@ files.post("/", async (c) => {
   if (!(f instanceof File)) return c.json({ error: "Missing file" }, 400);
   const table = (form.get("table") as string) || null;
   const recordId = (form.get("recordId") as string) || null;
-  const key = `${table ?? "misc"}/${crypto.randomUUID()}-${f.name.replace(/[^\w.-]+/g, "_")}`;
+  const safe = f.name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.-]+/g, "_");
+  // Website media go to the public bucket served by the CDN (media.otopio.ca)
+  if (form.get("public") === "1" && env.r2.publicBucket && env.r2.publicMediaUrl) {
+    const key = `${table ?? "misc"}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
+    await client(env.r2.publicBucket).write(key, f, { type: f.type || "application/octet-stream" });
+    return c.json({ key, url: `${env.r2.publicMediaUrl.replace(/\/$/, "")}/${key}` }, 201);
+  }
+  const key = `${table ?? "misc"}/${crypto.randomUUID()}-${safe}`;
   await client().write(key, f, { type: f.type });
   const [row] = await db
     .insert(schema.file)

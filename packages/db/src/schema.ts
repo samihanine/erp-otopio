@@ -107,7 +107,27 @@ export const billCategory = pgEnum("bill_category", [
   "office",
   "travel",
   "other",
+  // personal life categories
+  "subscription",
+  "transport",
+  "flight",
+  "accommodation",
+  "restaurant",
+  "groceries",
+  "shopping",
+  "concert",
+  "leisure",
+  "health",
+  "housing",
+  "utilities",
+  "telecom",
+  "education",
+  "bank_fees",
+  "taxes",
+  "gift",
 ]);
+export const expenseScope = pgEnum("expense_scope", ["pro", "perso", "mixed"]);
+export const cardBrand = pgEnum("card_brand", ["visa", "mastercard", "amex", "interac", "paypal", "apple_pay", "other"]);
 export const recurrence = pgEnum("recurrence", ["none", "monthly", "quarterly", "yearly"]);
 export const quoteStatus = pgEnum("quote_status", ["draft", "sent", "accepted", "rejected", "expired"]);
 export const contentStatus = pgEnum("content_status", ["idea", "draft", "review", "scheduled", "published", "archived"]);
@@ -437,14 +457,38 @@ export const bill = pgTable(
     taxTotal: money("tax_total").notNull().default(0),
     total: money("total").notNull().default(0),
     paymentMethod: text("payment_method"),
+    cardId: uuid("card_id").references(() => creditCard.id, { onDelete: "set null" }),
+    scope: expenseScope("scope").notNull().default("pro"),
+    /** recurring subscription still running (shown in the subscriptions view) */
+    active: boolean("active").notNull().default(false),
     fileUrl: text("file_url"),
     driveFileId: text("drive_file_id"),
     externalRef: text("external_ref"),
     notes: text("notes"),
     ...timestamps,
   },
-  (t) => [index("bill_entity_idx").on(t.legalEntityId), index("bill_org_idx").on(t.organizationId)],
+  (t) => [
+    index("bill_entity_idx").on(t.legalEntityId),
+    index("bill_org_idx").on(t.organizationId),
+    uniqueIndex("bill_external_ref_uq").on(t.externalRef),
+  ],
 );
+
+/** Payment cards (never the full number: brand + last 4 digits only). */
+export const creditCard = pgTable("credit_card", {
+  id: id(),
+  label: text("label").notNull(),
+  brand: cardBrand("brand").notNull().default("visa"),
+  last4: text("last4"),
+  issuer: text("issuer"),
+  holder: text("holder"),
+  expiry: text("expiry"), // MM/YY
+  legalEntityId: uuid("legal_entity_id").references(() => legalEntity.id, { onDelete: "set null" }),
+  scope: expenseScope("scope").notNull().default("perso"),
+  active: boolean("active").notNull().default(true),
+  notes: text("notes"),
+  ...timestamps,
+});
 
 /** Bank / accounting feed lines (Qonto, QuickBooks) used for reconciliation. */
 export const transaction = pgTable(
@@ -488,6 +532,64 @@ export const article = pgTable("article", {
   authorId: uuid("author_id").references(() => person.id, { onDelete: "set null" }),
   publishedAt: date("published_at"),
   seoScore: integer("seo_score"),
+  category: text("category"),
+  readingMinutes: integer("reading_minutes"),
+  /** other languages: { en: { title, excerpt, content } } — base fields are French */
+  translations: jsonb("translations").$type<Translations>().notNull().default({}),
+  ...timestamps,
+});
+
+/* -------------------------------------------------------------------------- */
+/*  Website (CMS for otopio.ca)                                               */
+/* -------------------------------------------------------------------------- */
+
+export type Translations = Record<string, Record<string, unknown>>;
+export type ArtifactSection = {
+  type: "image-text" | "text-image" | "card" | "cards" | "banner" | "gallery" | "stats" | "quote";
+  title?: string;
+  description?: string;
+  imageUrl?: string;
+  lucideIcon?: string;
+  subsections?: { title?: string; description?: string; imageUrl?: string; lucideIcon?: string }[];
+};
+
+/** Portfolio project shown on the website ("réalisation"). */
+export const artifact = pgTable("artifact", {
+  id: id(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  customer: text("customer"),
+  status: contentStatus("status").notNull().default("draft"),
+  position: integer("position").notNull().default(0),
+  summary: text("summary"),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  url: text("url"),
+  startedAt: date("started_at"),
+  endedAt: date("ended_at"),
+  tags: text("tags").array().notNull().default([]),
+  lucideIcon: text("lucide_icon"),
+  hexColor: text("hex_color"),
+  sections: jsonb("sections").$type<ArtifactSection[]>().notNull().default([]),
+  organizationId: uuid("organization_id").references(() => organization.id, { onDelete: "set null" }),
+  projectId: uuid("project_id").references(() => project.id, { onDelete: "set null" }),
+  translations: jsonb("translations").$type<Translations>().notNull().default({}),
+  ...timestamps,
+});
+
+export const teamMember = pgTable("team_member", {
+  id: id(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  role: text("role"),
+  bio: text("bio"),
+  group: text("group_key").notNull().default("team"), // founders | team
+  imageUrl: text("image_url"),
+  linkedin: text("linkedin"),
+  status: contentStatus("status").notNull().default("published"),
+  position: integer("position").notNull().default(0),
+  personId: uuid("person_id").references(() => person.id, { onDelete: "set null" }),
+  translations: jsonb("translations").$type<Translations>().notNull().default({}),
   ...timestamps,
 });
 

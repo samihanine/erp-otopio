@@ -19,6 +19,9 @@ export const env = {
     secretAccessKey: e.R2_SECRET_ACCESS_KEY ?? "",
     bucket: e.R2_BUCKET ?? "otopio-erp",
     publicUrl: e.R2_PUBLIC_URL ?? "",
+    /** public bucket for website media, served at publicMediaUrl (e.g. https://media.otopio.ca) */
+    publicBucket: e.R2_PUBLIC_BUCKET ?? "",
+    publicMediaUrl: e.R2_PUBLIC_MEDIA_URL ?? "",
   },
   cloudflareToken: e.CLOUDFLARE_API_TOKEN ?? "",
   qonto: Boolean(e.QONTO_LOGIN && e.QONTO_SECRET_KEY),

@@ -29,6 +29,8 @@ const FIELD_ICON: Record<FieldDef["type"], string> = {
   phone: "Phone",
   repo: "Github",
   lines: "List",
+  sections: "LayoutPanelTop",
+  image: "Image",
 };
 export const fieldIcon = (f: FieldDef) => FIELD_ICON[f.type];
 

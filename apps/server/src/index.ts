@@ -15,6 +15,7 @@ import { files } from "./routes/files";
 import { redisOk } from "./lib/queue";
 import { internalKey, mcp, wellKnown } from "./routes/mcp";
 import { workspace } from "./routes/workspace";
+import { publicApi, websiteAdmin } from "./routes/website";
 
 const app = new Hono<AppEnv>();
 
@@ -36,6 +37,8 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 // MCP (OAuth 2.1 + JSON-RPC) — has its own bearer auth
 app.route("/.well-known", wellKnown);
 app.route("/api/mcp", mcp);
+// Public, read-only website content (otopio.ca SSR)
+app.route("/api/public", publicApi);
 
 // Session guard for every other API route
 app.use("/api/*", async (c, next) => {
@@ -57,6 +60,7 @@ app.route("/api/documents", documents);
 app.route("/api/integrations", integrations);
 app.route("/api/files", files);
 app.route("/api/ws", workspace);
+app.route("/api/website", websiteAdmin);
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 // Optional: serve the built SPA when STATIC_DIR is set (single-container mode)
