@@ -30,6 +30,8 @@ export function WebsitePage() {
   const { data } = useQuery({ queryKey: ["website", days], queryFn: () => api<Analytics>(`/integrations/website/analytics?days=${days}`) });
   const { data: articles } = useList("article", {});
   const { data: posts } = useList("post", {});
+  const { data: artifacts } = useList("artifact", {});
+  const { data: team } = useList("team_member", {});
   const n = (v: number) => fmtNumber(v, locale);
 
   return (
@@ -50,6 +52,33 @@ export function WebsitePage() {
             </div>
             <Segmented value={days} onChange={setDays} options={[{ value: "7", label: "7 j" }, { value: "30", label: "30 j" }, { value: "90", label: "90 j" }]} />
           </div>
+
+          {/* CMS: content published on otopio.ca (server-side rendered from the ERP) */}
+          <div className="mt-6 grid gap-3 md:grid-cols-3">
+            {(["artifact", "team_member", "article"] as const).map((k) => {
+              const def = TABLES[k];
+              const rows = (k === "artifact" ? artifacts : k === "team_member" ? team : articles)?.rows ?? [];
+              const published = rows.filter((r) => r.status === "published").length;
+              return (
+                <Link key={k} to="/db/$table" params={{ table: k }} search={{}} className="group flex items-center gap-3 rounded-xl border border-border p-4 transition hover:border-border-strong">
+                  <TableTile icon={def.icon} color={def.color} size="lg" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-semibold">{tr(def.label)}</div>
+                    <div className="text-xs text-muted">
+                      {published} {tr({ fr: "publié(s)", en: "published" })} · {rows.length - published} {tr({ fr: "brouillon(s)", en: "draft(s)" })}
+                    </div>
+                  </div>
+                  <span className="text-xs text-subtle group-hover:text-fg">{tr({ fr: "Gérer →", en: "Manage →" })}</span>
+                </Link>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-subtle">
+            {tr({
+              fr: "Les réalisations, l'équipe et les articles publiés ici apparaissent sur otopio.ca en moins d'une minute (rendu serveur). Images hébergées sur Cloudflare R2 (media.otopio.ca).",
+              en: "Showcase, team and articles published here appear on otopio.ca within a minute (server-side rendering). Images on Cloudflare R2.",
+            })}
+          </p>
 
           {data?.demo && (
             <div className="mt-5 flex items-center gap-3 rounded-2xl border border-dashed border-border-strong bg-surface px-4 py-3 text-[13px]">
