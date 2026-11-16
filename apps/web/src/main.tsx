@@ -18,6 +18,7 @@ import { SettingsPage } from "./routes/settings";
 import { ClientsPage, ClientPage } from "./routes/clients";
 import { FilesPage } from "./routes/files";
 import { CalendarPage } from "./routes/calendar";
+import { PrivacyPage, TermsPage } from "./routes/legal";
 
 try {
   if (localStorage.getItem("erp.theme") === "dark") document.documentElement.classList.add("dark");
@@ -35,6 +36,8 @@ const requireAuth = async () => {
 };
 
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: "/login", component: LoginPage, validateSearch: (s: Record<string, unknown>): { next?: string } => (typeof s.next === "string" ? { next: s.next } : {}) });
+const privacyRoute = createRoute({ getParentRoute: () => rootRoute, path: "/privacy", component: PrivacyPage });
+const termsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/terms", component: TermsPage });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: "app", beforeLoad: requireAuth, component: () => <Outlet /> });
 
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: HomePage });
@@ -62,6 +65,8 @@ const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/sett
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  privacyRoute,
+  termsRoute,
   appRoute.addChildren([homeRoute, dbIndexRoute, dbRoute, recordRoute, docsRoute, docsModelsRoute, clientsRoute, clientRoute, calendarRoute, freeDocRoute, docEditorRoute, financeRoute, websiteRoute, settingsRoute]),
 ]);
 
