@@ -267,6 +267,7 @@ export const TABLES: Record<TableKey, TableDef> = {
       { key: "eventId", label: L("Événement", "Event"), type: "relation", relation: "event", hidden: true },
       { key: "aiSummary", label: L("Résumé IA", "AI summary"), type: "longtext", hidden: true, readOnly: true },
       { key: "mailbox", label: L("Boîte", "Mailbox"), type: "text", hidden: true },
+      { key: "externalId", label: L("Identifiant source", "Source id"), type: "text", hidden: true },
       { key: "participants", label: L("Participants", "Participants"), type: "tags", hidden: true },
       { key: "attachments", label: L("Pièces jointes", "Attachments"), type: "tags" },
       { key: "attachmentUrl", label: L("Lien pièce jointe", "Attachment link"), type: "url", hidden: true },
