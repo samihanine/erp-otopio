@@ -29,6 +29,9 @@ export type FinanceSummary = {
     paidBillsWithoutTransaction: { id: string; label: string; amount: number; currency: string }[];
     overdue: { id: string; number: string; client: string | null; balance: number; currency: string; dueDate: string | null }[];
   };
+  personal?: { total: number; count: number; byCategory: { category: string; amount: number }[] };
+  subscriptions?: { id: string; label: string; scope: string; recurrence: string; amount: number; currency: string; monthly: number; lastCharge: string | null; card: string | null }[];
+  subscriptionsMonthly?: number;
 };
 
 export function FinancePage() {
@@ -250,6 +253,59 @@ export function FinancePage() {
                 {!data?.byClient.length && <div className="text-[13px] text-subtle">—</div>}
               </div>
             </div>
+
+            {/* Active subscriptions */}
+            {data?.subscriptions?.length ? (
+              <div className="rounded-xl border border-border p-5">
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-[15px] font-semibold">{tr({ fr: "Abonnements en cours", en: "Active subscriptions" })}</h3>
+                  <span className="text-[13px] tabular-nums text-muted">
+                    ≈ {money(data.subscriptionsMonthly ?? 0)} / {tr({ fr: "mois", en: "month" })}
+                  </span>
+                </div>
+                <div className="mt-3 max-h-80 space-y-0.5 overflow-y-auto">
+                  {data.subscriptions.map((s) => (
+                    <button key={s.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "bill", id: s.id } })} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
+                      <span className={cn("size-1.5 shrink-0 rounded-full", s.scope === "perso" ? "bg-pink-500" : "bg-blue-500")} />
+                      <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                      {s.card && <span className="hidden shrink-0 text-xs text-subtle sm:inline">{s.card}</span>}
+                      <span className="shrink-0 tabular-nums text-muted">
+                        {formatMoney(s.amount, s.currency, locale)}
+                        <span className="text-subtle">/{s.recurrence === "yearly" ? tr({ fr: "an", en: "yr" }) : s.recurrence === "quarterly" ? tr({ fr: "trim.", en: "qtr" }) : tr({ fr: "mois", en: "mo" })}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Personal life spending */}
+            {data?.personal?.count ? (
+              <div className="rounded-xl border border-border p-5">
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-[15px] font-semibold">{tr({ fr: "Dépenses perso", en: "Personal spending" })}</h3>
+                  <span className="text-[13px] tabular-nums text-muted">{money(data.personal.total)}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted">{tr({ fr: "Hors chiffres de l'activité (marge, dépenses pro).", en: "Excluded from business figures." })}</p>
+                <div className="mt-3 space-y-2">
+                  {data.personal.byCategory.slice(0, 8).map((c) => {
+                    const opt = catField.options?.find((o) => o.value === c.category);
+                    const max = data.personal!.byCategory[0]?.amount || 1;
+                    return (
+                      <div key={c.category}>
+                        <div className="flex items-center justify-between text-[13px]">
+                          <span className="truncate">{opt ? tr(opt.label) : c.category}</span>
+                          <span className="tabular-nums text-muted">{money(c.amount)}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                          <div className="h-full rounded-full" style={{ width: `${(c.amount / max) * 100}%`, background: HEX[opt?.color ?? "gray"] }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             {/* Reconciliation */}
             <div className="rounded-xl border border-border p-5">

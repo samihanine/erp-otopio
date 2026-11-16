@@ -28,7 +28,10 @@ finance.get("/summary", async (c) => {
 
   const inv = scoped(invoices).filter((i) => i.status !== "cancelled");
   const issued = inv.filter((i) => i.status !== "draft" && inYear(i.issueDate, year));
-  const bl = scoped(bills).filter((b) => b.status !== "cancelled" && inYear(b.issueDate, year));
+  const yearBills = scoped(bills).filter((b) => b.status !== "cancelled" && inYear(b.issueDate, year));
+  // business figures only count professional spending; personal life spending is reported apart
+  const bl = yearBills.filter((b) => b.scope !== "perso");
+  const perso = yearBills.filter((b) => b.scope !== "pro");
   const tx = scoped(txs);
 
   const sum = (xs: number[]) => round2(xs.reduce((a, b) => a + b, 0));
@@ -77,7 +80,7 @@ finance.get("/summary", async (c) => {
 
   const byEntity = entities.map((e) => {
     const ei = invoices.filter((i) => i.legalEntityId === e.id && i.status !== "draft" && i.status !== "cancelled" && inYear(i.issueDate, year));
-    const eb = bills.filter((b) => b.legalEntityId === e.id && b.status !== "cancelled" && inYear(b.issueDate, year));
+    const eb = bills.filter((b) => b.legalEntityId === e.id && b.status !== "cancelled" && b.scope !== "perso" && inYear(b.issueDate, year));
     return {
       id: e.id,
       name: e.name,
@@ -100,24 +103,55 @@ finance.get("/summary", async (c) => {
     if (t.invoiceId) txByInvoice.set(t.invoiceId, (txByInvoice.get(t.invoiceId) ?? 0) + t.amount);
     if (t.billId) txByBill.add(t.billId);
   }
+  const proBills = scoped(bills).filter((b) => b.scope !== "perso");
   const checks = {
     paidWithoutPayment: inv
-      .filter((i) => (i.status === "paid" || i.amountPaid > 0) && !txByInvoice.has(i.id))
+      .filter((i) => !noFeed.has(i.legalEntityId) && (i.status === "paid" || i.amountPaid > 0) && !txByInvoice.has(i.id))
       .map((i) => ({ id: i.id, number: i.number, client: orgName.get(i.organizationId ?? "") ?? null, amount: i.amountPaid, currency: i.currency })),
-    billsWithoutReceipt: scoped(bills)
+    billsWithoutReceipt: proBills
       .filter((b) => !b.fileUrl && !b.driveFileId)
       .map((b) => ({ id: b.id, label: b.label, amount: b.total, currency: b.currency, date: b.issueDate })),
-    billsWithoutAmount: scoped(bills)
+    billsWithoutAmount: proBills
       .filter((b) => !b.total)
       .map((b) => ({ id: b.id, label: b.label, date: b.issueDate })),
     unmatchedTransactions: tx
       .filter((t) => !t.invoiceId && !t.billId)
       .map((t) => ({ id: t.id, label: t.label, amount: t.amount, currency: t.currency, side: t.side, date: t.date })),
-    paidBillsWithoutTransaction: scoped(bills)
-      .filter((b) => b.status === "paid" && b.total > 0 && !txByBill.has(b.id))
+    paidBillsWithoutTransaction: proBills
+      .filter((b) => !noFeed.has(b.legalEntityId) && b.status === "paid" && b.total > 0 && !txByBill.has(b.id))
       .map((b) => ({ id: b.id, label: b.label, amount: b.total, currency: b.currency })),
     overdue: overdueList.map((i) => ({ id: i.id, number: i.number, client: orgName.get(i.organizationId ?? "") ?? null, balance: round2(i.total - i.amountPaid), currency: i.currency, dueDate: i.dueDate })),
   };
+
+  // Personal life spending (scope perso/mixed) — reported apart from the business
+  const personalByCat = new Map<string, number>();
+  for (const b of perso) personalByCat.set(b.category, (personalByCat.get(b.category) ?? 0) + conv(b.total, b.currency));
+  const personal = {
+    total: sum(perso.map((b) => conv(b.total, b.currency))),
+    count: perso.length,
+    byCategory: [...personalByCat.entries()].map(([category, amount]) => ({ category, amount: round2(amount) })).sort((a, b) => b.amount - a.amount),
+  };
+
+  // Subscriptions still running (latest charge flagged active), with a monthly equivalent
+  const PER_MONTH: Record<string, number> = { monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, none: 1 };
+  const cardsById = new Map((await db.select().from(schema.creditCard)).map((k) => [k.id, k]));
+  const subscriptions = scoped(bills)
+    .filter((b) => b.active)
+    .map((b) => {
+      const card = b.cardId ? cardsById.get(b.cardId) : null;
+      return {
+        id: b.id,
+        label: b.label,
+        scope: b.scope,
+        recurrence: b.recurrence,
+        amount: b.total,
+        currency: b.currency,
+        monthly: round2(conv(b.total, b.currency) * (PER_MONTH[b.recurrence] ?? 1)),
+        lastCharge: b.issueDate,
+        card: card ? `${card.label}` : (b.paymentMethod ?? null),
+      };
+    })
+    .sort((a, b) => b.monthly - a.monthly);
 
   return c.json({
     year,
@@ -129,5 +163,8 @@ finance.get("/summary", async (c) => {
     byCategory,
     byEntity,
     checks,
+    personal,
+    subscriptions,
+    subscriptionsMonthly: sum(subscriptions.map((s) => s.monthly)),
   });
 });
