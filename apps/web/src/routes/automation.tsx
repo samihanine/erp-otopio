@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useEffect, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, Undo2 } from "lucide-react";
@@ -132,6 +132,50 @@ export function AutomationJournal() {
           ))}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+export function PersonalGoogle() {
+  const { tr, locale } = useI18n();
+  const qc = useQueryClient();
+  const { data = [] } = useQuery({ queryKey: ["personal-google"], queryFn: () => api<{ email: string; updatedAt: string }[]>("/integrations/google-personal") });
+  useEffect(() => {
+    const p = new URLSearchParams(location.search);
+    const g = p.get("google");
+    if (!g) return;
+    if (g === "connected") toast.success(`${tr({ fr: "Compte connecté", en: "Account connected" })} : ${p.get("account") ?? ""}`);
+    else toast.error(`Google : ${g}`);
+    history.replaceState(null, "", location.pathname);
+  }, []);
+  const remove = async (email: string) => {
+    await api(`/integrations/google-personal?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+    qc.invalidateQueries({ queryKey: ["personal-google"] });
+  };
+  return (
+    <section className="mt-10">
+      <div className="mb-1 flex items-center gap-2">
+        <h2 className="text-lg font-semibold">{tr({ fr: "Comptes Google personnels", en: "Personal Google accounts" })}</h2>
+        <a href="/api/integrations/google-personal/connect" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-[13px] font-medium hover:bg-hover">
+          + {tr({ fr: "Connecter un compte", en: "Connect an account" })}
+        </a>
+      </div>
+      <p className="mb-3 text-[13px] text-muted">
+        {tr({ fr: "Pour gérer une boîte Gmail hors Workspace (ex. @gmail.com). Le jeton est chiffré et visible uniquement par vous.", en: "To manage a non-Workspace Gmail inbox. The token is encrypted and only visible to you." })}
+      </p>
+      <div className="overflow-hidden rounded-xl border border-border">
+        {data.map((a) => (
+          <div key={a.email} className="flex items-center gap-3 border-b border-border px-4 py-2.5 text-[13px] last:border-0">
+            <span className="size-1.5 rounded-full bg-emerald-500" />
+            <span className="flex-1">{a.email}</span>
+            <span className="text-xs text-subtle">{fmtRelative(a.updatedAt, locale)}</span>
+            <Button size="sm" variant="ghost" onClick={() => remove(a.email)}>
+              {tr({ fr: "Déconnecter", en: "Disconnect" })}
+            </Button>
+          </div>
+        ))}
+        {!data.length && <div className="p-5 text-center text-[13px] text-subtle">{tr({ fr: "Aucun compte connecté.", en: "No account connected." })}</div>}
+      </div>
     </section>
   );
 }

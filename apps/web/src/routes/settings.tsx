@@ -8,7 +8,7 @@ import { useCreateRecord, useList } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { Segmented, StatusDot } from "@/components/ui/misc";
 import { useState } from "react";
-import { AutomationJournal } from "./automation";
+import { AutomationJournal, PersonalGoogle } from "./automation";
 
 type Status = {
   google: { connected: boolean; scope: string };
@@ -112,6 +112,8 @@ export function SettingsPage() {
           </section>
 
           <AutomationJournal />
+
+          <PersonalGoogle />
 
           <section className="mt-10">
             <h2 className="mb-3 text-lg font-semibold">{tr({ fr: "Préférences", en: "Preferences" })}</h2>

@@ -60,7 +60,7 @@ export function FinancePage() {
             ))}
           </select>
           <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="h-9 rounded-xl border border-border bg-surface px-3 text-[13px] outline-none">
-            {[0, 1, 2].map((d) => {
+            {Array.from({ length: new Date().getFullYear() - 2022 }, (_, d) => d).map((d) => {
               const y = new Date().getFullYear() - d;
               return (
                 <option key={y} value={y}>

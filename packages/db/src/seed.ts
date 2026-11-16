@@ -52,6 +52,60 @@ const BUSINESS_TABLES = [
   "legal_entity",
 ];
 
+/** Personal freelance activities (travailleurs autonomes, QC) — small suppliers exempt from GST/QST. */
+export const FREELANCE_ENTITIES = [
+  {
+    code: "SHF",
+    name: "Sami Freelance Canada",
+    legalName: "Sami Hanine",
+    legalForm: "Travailleur autonome (Québec)",
+    country: "CA",
+    currency: "CAD",
+    addressLine1: "4130-425 rue de la Montagne",
+    postalCode: "H3C 0J9",
+    city: "Montréal",
+    region: "QC",
+    email: "sami.hanine22@gmail.com",
+    phone: "+1 (514) 430-5919",
+    taxIds: [] as { label: string; value: string }[],
+    defaultTaxes: [],
+    bankDetails: [{ label: "Méthode", value: "Virement Interac" }, { label: "Courriel", value: "sami.hanine22@gmail.com" }],
+    paymentTerms: "Payable dans les 30 jours suivant la date d'émission.",
+    legalMentions: "Petit fournisseur — non inscrit aux fichiers de la TPS et de la TVQ (revenus annuels inférieurs à 30 000 $). Aucune taxe facturée.",
+    invoicePrefix: "SH-{YYYY}-",
+    quotePrefix: "SH-D{YYYY}-",
+    nextInvoiceNumber: 1,
+    nextQuoteNumber: 1,
+    accountingProvider: "none" as const,
+    color: "#0f766e",
+  },
+  {
+    code: "MTF",
+    name: "Maïssane Freelance Canada",
+    legalName: "Maïssane Touati",
+    legalForm: "Travailleuse autonome (Québec)",
+    country: "CA",
+    currency: "CAD",
+    addressLine1: "425 rue de la Montagne",
+    postalCode: "H3C 0J9",
+    city: "Montréal",
+    region: "QC",
+    email: "contact@otopio.net",
+    phone: "+1 (514) 565-1701",
+    taxIds: [] as { label: string; value: string }[],
+    defaultTaxes: [],
+    bankDetails: [{ label: "Méthode", value: "Virement Interac" }],
+    paymentTerms: "Payable dans les 30 jours suivant la date d'émission.",
+    legalMentions: "Petit fournisseur — non inscrite aux fichiers de la TPS et de la TVQ (revenus annuels inférieurs à 30 000 $). Aucune taxe facturée.",
+    invoicePrefix: "MT-{YYYY}-",
+    quotePrefix: "MT-D{YYYY}-",
+    nextInvoiceNumber: 1,
+    nextQuoteNumber: 1,
+    accountingProvider: "none" as const,
+    color: "#be185d",
+  },
+];
+
 async function main() {
   if (process.env.SEED_RESET === "1") {
     console.log("[seed] reset business tables");
@@ -130,6 +184,7 @@ async function main() {
         accountingProvider: "quickbooks",
         color: "#1c3266",
       },
+      ...FREELANCE_ENTITIES,
     ])
     .returning();
   if (!mgs || !otp) throw new Error("entities not created");

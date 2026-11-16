@@ -7,6 +7,7 @@ import {
   gt,
   gte,
   ilike,
+  like,
   inArray,
   isNotNull,
   isNull,
@@ -262,13 +263,20 @@ export async function withComputedTotals(table: TableKey, data: Record<string, u
   return { ...data, lines, taxes: t.taxes, subtotal: t.subtotal, taxTotal: t.taxTotal, total: t.total };
 }
 
-/** Next document number for an entity: prefix with {YYYY} → F-2026-005 */
-export async function nextNumber(kind: "invoice" | "quote", entityId: string) {
+/** Next document number for an entity: prefix with {YYYY} → F-2026-005.
+ *  The year comes from the document date, so back-dated invoices get their own year's sequence. */
+export async function nextNumber(kind: "invoice" | "quote", entityId: string, date?: unknown) {
   const [e] = await db.select().from(schema.legalEntity).where(eq(schema.legalEntity.id, entityId));
   if (!e) throw new Error("Unknown legal entity");
-  const year = new Date().getFullYear();
+  const current = new Date().getFullYear();
+  const y = date ? Number(String(date).slice(0, 4)) : current;
+  const year = Number.isFinite(y) && y > 1990 ? y : current;
   const prefix = (kind === "invoice" ? e.invoicePrefix : e.quotePrefix).replace("{YYYY}", String(year));
-  const n = kind === "invoice" ? e.nextInvoiceNumber : e.nextQuoteNumber;
+  const t = kind === "invoice" ? schema.invoice : schema.quote;
+  const existing = await db.select({ number: t.number }).from(t).where(and(eq(t.legalEntityId, entityId), like(t.number, `${prefix}%`)));
+  const maxExisting = existing.reduce((m, r) => Math.max(m, Number(r.number.slice(prefix.length)) || 0), 0);
+  if (year !== current) return { number: `${prefix}${String(maxExisting + 1).padStart(3, "0")}`, currency: e.currency, taxes: e.defaultTaxes };
+  const n = Math.max(kind === "invoice" ? e.nextInvoiceNumber : e.nextQuoteNumber, maxExisting + 1);
   await db
     .update(schema.legalEntity)
     .set(kind === "invoice" ? { nextInvoiceNumber: n + 1 } : { nextQuoteNumber: n + 1 })

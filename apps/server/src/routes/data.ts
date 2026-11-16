@@ -158,7 +158,7 @@ data.post("/:table", async (c) => {
       values.legalEntityId = first?.id;
     }
     if (!values.number) {
-      const n = await nextNumber(key, values.legalEntityId as string);
+      const n = await nextNumber(key, values.legalEntityId as string, values.issueDate);
       values.number = n.number;
       values.currency ??= n.currency;
       values.taxes ??= n.taxes;
