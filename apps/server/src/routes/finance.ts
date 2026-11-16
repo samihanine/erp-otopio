@@ -34,7 +34,14 @@ finance.get("/summary", async (c) => {
   const sum = (xs: number[]) => round2(xs.reduce((a, b) => a + b, 0));
   const invoicedHT = sum(issued.map((i) => conv(i.subtotal, i.currency)));
   const invoicedTTC = sum(issued.map((i) => conv(i.total, i.currency)));
-  const collected = sum(tx.filter((t) => t.side === "credit" && inYear(t.date, year)).map((t) => conv(t.amount, t.currency)));
+  // Entities without a bank feed (e.g. freelance activities): payments recorded on invoices count as collected.
+  const noFeed = new Set(entities.filter((e) => e.accountingProvider === "none").map((e) => e.id));
+  const paidNoFeed = inv.filter((i) => noFeed.has(i.legalEntityId) && i.amountPaid > 0 && (i.paidAt ?? i.issueDate));
+  const paidOn = (i: (typeof inv)[number]) => i.paidAt ?? i.issueDate ?? "";
+  const collected = round2(
+    sum(tx.filter((t) => t.side === "credit" && inYear(t.date, year)).map((t) => conv(t.amount, t.currency))) +
+      sum(paidNoFeed.filter((i) => inYear(paidOn(i), year)).map((i) => conv(i.amountPaid, i.currency))),
+  );
   const open = inv.filter((i) => ["sent", "partial", "overdue"].includes(i.status));
   const outstanding = sum(open.map((i) => conv(i.total - i.amountPaid, i.currency)));
   const overdueList = open.filter((i) => i.status === "overdue" || (i.dueDate && i.dueDate < today()));
@@ -47,7 +54,10 @@ finance.get("/summary", async (c) => {
       month: mm,
       revenue: sum(issued.filter((i) => i.issueDate?.startsWith(mm)).map((i) => conv(i.subtotal, i.currency))),
       expenses: sum(bl.filter((b) => b.issueDate?.startsWith(mm)).map((b) => conv(b.total, b.currency))),
-      collected: sum(tx.filter((t) => t.side === "credit" && t.date.startsWith(mm)).map((t) => conv(t.amount, t.currency))),
+      collected: round2(
+        sum(tx.filter((t) => t.side === "credit" && t.date.startsWith(mm)).map((t) => conv(t.amount, t.currency))) +
+          sum(paidNoFeed.filter((i) => paidOn(i).startsWith(mm)).map((i) => conv(i.amountPaid, i.currency))),
+      ),
     };
   });
 
