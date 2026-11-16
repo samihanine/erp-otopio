@@ -164,7 +164,13 @@ integrations.get("/google-personal", async (c) => {
 
 /** Short-lived access token (1h) for one of the current user's connected accounts. */
 integrations.get("/google-personal/token", async (c) => {
-  const email = (c.req.query("email") ?? "").toLowerCase();
+  let email = (c.req.query("email") ?? "").toLowerCase();
+  if (!email) {
+    // default: the only connected account (or the n-th one with ?index=)
+    const rows = await db.select().from(schema.syncState).where(like(schema.syncState.key, stateKey(`${c.get("user")!.email}:%`)));
+    const r = rows[Number(c.req.query("index") ?? 0)];
+    email = r ? r.key.split(":").slice(2).join(":") : "";
+  }
   const sealed = await readState(stateKey(`${c.get("user")!.email}:${email}`));
   if (!sealed) return c.json({ error: "Not connected" }, 404);
   const { refreshToken } = await unseal<{ refreshToken: string }>(sealed);
