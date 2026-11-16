@@ -7,3 +7,4 @@ dist
 .DS_Store
 .turbo
 dump.rdb
+scripts/gmail-report.json
