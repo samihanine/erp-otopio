@@ -620,6 +620,7 @@ export const TABLES: Record<TableKey, TableDef> = {
       { key: "number", label: L("N° facture fournisseur", "Supplier invoice #"), type: "text", hidden: true },
       { key: "projectId", label: L("Projet", "Project"), type: "relation", relation: "project", hidden: true },
       { key: "paymentMethod", label: L("Moyen de paiement", "Payment method"), type: "text", hidden: true },
+      { key: "externalRef", label: L("Référence source", "Source ref"), type: "text", hidden: true },
       { key: "notes", label: L("Notes", "Notes"), type: "longtext", hidden: true },
       ...timestampsFields,
     ],
