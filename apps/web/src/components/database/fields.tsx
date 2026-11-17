@@ -175,7 +175,7 @@ export function SelectEditor({ field, value, onChange }: { field: FieldDef; valu
 export function RelationEditor({ field, value, onChange }: { field: FieldDef; value: unknown; onChange: (v: unknown, close?: boolean, label?: string) => void }) {
   const { t } = useI18n();
   const [q, setQ] = useState("");
-  const { data = [], isFetching } = useOptions(field.relation, q);
+  const { data = [], isFetching } = useOptions(field.relation, q, true, field.relationScope);
   const target = TABLES[field.relation!];
   return (
     <div className="w-72">

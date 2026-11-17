@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ExternalLink, Eye, Globe, MousePointerClick, Sparkles, Timer, Users } from "lucide-react";
+import { ExternalLink, Eye, Globe, MousePointerClick, RefreshCw, Sparkles, Timer, Users } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { CONTENT_STATUS_OPTIONS, TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
@@ -9,17 +9,21 @@ import { api } from "@/lib/api";
 import { fmtDate, fmtNumber, useI18n } from "@/lib/i18n";
 import { useList } from "@/lib/data";
 import { HEX } from "@/lib/colors";
+import { cn } from "@/lib/utils";
 import { OptionBadge, Segmented, TableTile } from "@/components/ui/misc";
 
 type Analytics = {
   demo: boolean;
-  domain: string;
-  totals: { visitors: number; pageviews: number; bounceRate: number; avgDuration: number };
-  series: { date: string; visitors: number; pageviews: number }[];
+  error?: string;
+  zones: string[];
+  zone: string;
+  totals: { visitors: number; pageviews: number; requests: number; mobileShare: number };
+  series: { date: string; visitors: number; pageviews: number; requests: number }[];
+  perZone: { name: string; visitors: number; pageviews: number }[];
   pages: { path: string; views: number }[];
-  referrers: { source: string; visitors: number }[];
-  countries: { code: string; visitors: number }[];
-  devices: { device: string; share: number }[];
+  pagesDays: number;
+  countries: { code: string; share: number }[];
+  browsers: { name: string; share: number }[];
 };
 
 const FLAGS: Record<string, string> = { CA: "🇨🇦", FR: "🇫🇷", US: "🇺🇸", BE: "🇧🇪", CH: "🇨🇭" };
@@ -27,7 +31,8 @@ const FLAGS: Record<string, string> = { CA: "🇨🇦", FR: "🇫🇷", US: "�
 export function WebsitePage() {
   const { tr, t, locale } = useI18n();
   const [days, setDays] = useState<"7" | "30" | "90">("30");
-  const { data } = useQuery({ queryKey: ["website", days], queryFn: () => api<Analytics>(`/integrations/website/analytics?days=${days}`) });
+  const [zone, setZone] = useState("all");
+  const { data, isFetching } = useQuery({ queryKey: ["website", days, zone], queryFn: () => api<Analytics>(`/integrations/website/analytics?days=${days}&zone=${zone}`), placeholderData: (p) => p });
   const { data: articles } = useList("article", {});
   const { data: posts } = useList("post", {});
   const { data: artifacts } = useList("artifact", {});
@@ -81,20 +86,27 @@ export function WebsitePage() {
           </p>
 
           {data?.demo && (
-            <div className="mt-5 flex items-center gap-3 rounded-2xl border border-dashed border-border-strong bg-surface px-4 py-3 text-[13px]">
-              <Sparkles className="size-4 text-accent" />
-              <span className="flex-1 text-muted">
-                <strong className="text-fg">{t("demoData")}.</strong> {tr({ fr: "Ajoutez un jeton Cloudflare (Analytics:Read) dans CLOUDFLARE_API_TOKEN pour afficher les vraies statistiques Web Analytics du site.", en: "Add a Cloudflare token (Analytics:Read) as CLOUDFLARE_API_TOKEN to show real Web Analytics." })}
-              </span>
+            <div className="mt-5 flex items-center gap-3 rounded-2xl border border-dashed border-border-strong px-4 py-3 text-[13px] text-muted">
+              <Sparkles className="size-4 text-accent" /> {tr({ fr: "Statistiques Cloudflare indisponibles (clé API manquante côté serveur).", en: "Cloudflare analytics unavailable (missing API key)." })}
             </div>
           )}
 
+          {/* Domain tabs */}
+          <div className="no-scrollbar mt-6 flex gap-1 overflow-x-auto border-b border-border">
+            {["all", ...(data?.zones ?? [])].map((z) => (
+              <button key={z} type="button" onClick={() => setZone(z)} className={cn("-mb-px shrink-0 border-b-2 px-3 py-2 text-[13px] font-medium", zone === z ? "border-fg text-fg" : "border-transparent text-muted hover:text-fg")}>
+                {z === "all" ? tr({ fr: "Global", en: "All domains" }) : z}
+              </button>
+            ))}
+            {isFetching && <RefreshCw className="my-auto ml-2 size-3.5 animate-spin text-subtle" />}
+          </div>
+
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { label: tr({ fr: "Visiteurs uniques", en: "Unique visitors" }), value: data ? n(data.totals.visitors) : "…", icon: Users, tint: "#2563eb" },
-              { label: tr({ fr: "Pages vues", en: "Page views" }), value: data ? n(data.totals.pageviews) : "…", icon: Eye, tint: "#8b5cf6" },
-              { label: tr({ fr: "Taux de rebond", en: "Bounce rate" }), value: data ? `${Math.round(data.totals.bounceRate * 100)} %` : "…", icon: MousePointerClick, tint: "#f97316" },
-              { label: tr({ fr: "Durée moyenne", en: "Avg. duration" }), value: data ? `${Math.floor(data.totals.avgDuration / 60)} min ${data.totals.avgDuration % 60} s` : "…", icon: Timer, tint: "#10b981" },
+              { label: tr({ fr: "Visiteurs uniques", en: "Unique visitors" }), value: data?.totals ? n(data.totals.visitors) : "…", icon: Users, tint: "#2563eb" },
+              { label: tr({ fr: "Pages vues", en: "Page views" }), value: data?.totals ? n(data.totals.pageviews) : "…", icon: Eye, tint: "#8b5cf6" },
+              { label: tr({ fr: "Requêtes", en: "Requests" }), value: data?.totals ? n(data.totals.requests) : "…", icon: MousePointerClick, tint: "#f97316" },
+              { label: tr({ fr: "Part mobile", en: "Mobile share" }), value: data?.totals ? `${Math.round(data.totals.mobileShare * 100)} %` : "…", icon: Timer, tint: "#10b981" },
             ].map((k) => (
               <div key={k.label} className="rounded-xl border border-border p-4">
                 <div className="flex items-center justify-between text-[13px] text-muted">
@@ -132,25 +144,26 @@ export function WebsitePage() {
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            <Panel title={tr({ fr: "Pages populaires", en: "Top pages" })}>
-              {data?.pages.map((p) => <BarRow key={p.path} label={<span className="font-mono text-xs">{p.path}</span>} value={p.views} max={data.pages[0]!.views} color="#2563eb" fmt={n} />)}
+            <Panel title={`${tr({ fr: "Pages populaires", en: "Top pages" })}${data?.pagesDays ? ` · ${data.pagesDays} j` : ""}`}>
+              {data?.pages?.map((p) => <BarRow key={p.path} label={<span className="font-mono text-xs">{p.path}</span>} value={p.views} max={data.pages[0]!.views} color="#2563eb" fmt={n} />)}
+              {!data?.pages?.length && <p className="text-xs text-subtle">—</p>}
+              <p className="pt-1 text-xs text-subtle">{tr({ fr: "Cloudflare (offre gratuite) ne conserve le détail des pages que quelques jours.", en: "Cloudflare free plan keeps page detail for a few days only." })}</p>
             </Panel>
-            <Panel title={tr({ fr: "Sources", en: "Referrers" })}>
-              {data?.referrers.map((p) => <BarRow key={p.source} label={p.source} value={p.visitors} max={data.referrers[0]!.visitors} color="#8b5cf6" fmt={n} />)}
-              <p className="pt-1 text-xs text-subtle">{tr({ fr: "« ChatGPT / Perplexity » = trafic issu des moteurs génératifs (GEO).", en: "“ChatGPT / Perplexity” = traffic from generative engines (GEO)." })}</p>
-            </Panel>
-            <Panel title={tr({ fr: "Pays & appareils", en: "Countries & devices" })}>
-              {data?.countries.map((c) => <BarRow key={c.code} label={`${FLAGS[c.code] ?? ""} ${c.code}`} value={c.visitors} max={data.countries[0]!.visitors} color="#14b8a6" fmt={n} />)}
-              <div className="mt-3 flex h-2 overflow-hidden rounded-full">
-                {data?.devices.map((d, i) => <div key={d.device} style={{ width: `${d.share * 100}%`, background: ["#0a1430", "#2563eb", "#a9bbe6"][i] }} />)}
-              </div>
-              <div className="mt-1.5 flex gap-3 text-xs text-muted">
-                {data?.devices.map((d) => (
-                  <span key={d.device}>
-                    {d.device} {Math.round(d.share * 100)} %
-                  </span>
+            {zone === "all" && data?.perZone && data.perZone.length > 1 ? (
+              <Panel title={tr({ fr: "Par domaine", en: "By domain" })}>
+                {data.perZone.map((z) => (
+                  <button key={z.name} type="button" onClick={() => setZone(z.name)} className="block w-full text-left">
+                    <BarRow label={z.name} value={z.visitors} max={Math.max(...data.perZone.map((x) => x.visitors)) || 1} color="#8b5cf6" fmt={(v) => `${n(v)} ${tr({ fr: "visiteurs", en: "visitors" })}`} />
+                  </button>
                 ))}
-              </div>
+              </Panel>
+            ) : (
+              <Panel title={tr({ fr: "Navigateurs", en: "Browsers" })}>
+                {data?.browsers?.map((b) => <BarRow key={b.name} label={b.name} value={Math.round(b.share * 100)} max={Math.round((data.browsers[0]?.share ?? 1) * 100) || 1} color="#8b5cf6" fmt={(v) => `${v} %`} />)}
+              </Panel>
+            )}
+            <Panel title={tr({ fr: "Pays", en: "Countries" })}>
+              {data?.countries?.map((c) => <BarRow key={c.code} label={`${FLAGS[c.code] ?? ""} ${c.code}`} value={Math.round(c.share * 1000) / 10} max={Math.round((data.countries[0]?.share ?? 1) * 1000) / 10 || 1} color="#14b8a6" fmt={(v) => `${v} %`} />)}
             </Panel>
           </div>
 

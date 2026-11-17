@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, EyeOff, Maximize2, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, EyeOff, Filter, FilterX, Maximize2, Plus, Repeat } from "lucide-react";
+import { ColumnFilter } from "./column-filters";
 import { formatMoney, TABLES, type FieldDef, type TableKey } from "@erp/shared";
 import type { Refs, Row } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -177,6 +178,27 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
             );
           })}
           <div />
+          {/* Inline column filters */}
+          <div className="sticky left-0 z-20 flex h-9 items-center justify-center border-r border-t border-border bg-surface">
+            {config.filters.some((x) => x.id.startsWith("col:")) ? (
+              <button
+                type="button"
+                title={tr({ fr: "Effacer les filtres", en: "Clear filters" })}
+                onClick={() => onConfigChange({ ...config, filters: config.filters.filter((x) => !x.id.startsWith("col:")) })}
+                className="grid size-6 place-items-center rounded-md text-accent hover:bg-accent/10"
+              >
+                <FilterX className="size-3.5" />
+              </button>
+            ) : (
+              <Filter className="size-3.5 text-subtle" />
+            )}
+          </div>
+          {fields.map((f) => (
+            <div key={f.key} className={cn("flex h-9 items-center border-r border-t border-border px-1", f.key === def.primary && "sticky left-[44px] z-20 bg-surface shadow-[2px_0_0_0_var(--border)]")}>
+              <ColumnFilter field={f} config={config} onChange={onConfigChange} table={table} />
+            </div>
+          ))}
+          <div className="border-t border-border" />
         </div>
 
         {/* Rows */}
@@ -245,6 +267,11 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
                   <div className="flex min-w-0 flex-1 items-center overflow-hidden">
                     <FieldDisplay field={f} row={r} refs={refs} table={table} />
                     {primary && !r[f.key] && <span className="text-subtle">{t("untitled")}</span>}
+                    {primary && r._seriesCount ? (
+                      <span className="ml-2 inline-flex shrink-0 items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-normal text-muted ring-1 ring-inset ring-border">
+                        <Repeat className="size-3" /> {String(r._seriesCount)} {tr({ fr: "à venir", en: "upcoming" })}
+                      </span>
+                    ) : null}
                   </div>
                   {primary && (
                     <button

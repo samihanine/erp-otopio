@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ExternalLink, FileText, GitCommitHorizontal, Github, Link2, Maximize2, MessageSquare, MoreHorizontal, Trash2, X } from "lucide-react";
+import { Repeat, ExternalLink, FileText, GitCommitHorizontal, Github, Link2, Maximize2, MessageSquare, MoreHorizontal, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { TABLES, type TableKey } from "@erp/shared";
 import { api, type Refs, type Row } from "@/lib/api";
 import { fmtRelative, useI18n } from "@/lib/i18n";
-import { recordLabel, useDeleteRecord, useRecord, useRelated, useUpdateRecord } from "@/lib/data";
+import { recordLabel, useDeleteRecord, useList, useRecord, useRelated, useUpdateRecord } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, Icon, Skeleton, TableTile } from "@/components/ui/misc";
@@ -141,6 +141,8 @@ export function RecordDetail({ table, id, onClose, full }: { table: TableKey; id
               <SectionsEditor key={id} value={row[f.key]} onSave={(v) => save(f.key, v)} table={table} recordId={id} />
             </div>
           ))}
+
+          {table === "event" && row.seriesId ? <SeriesOccurrences seriesId={String(row.seriesId)} owner={String(row.calendarOwner)} currentId={id} recurrence={row.recurrence as string | null} /> : null}
 
           {def.translatable ? <TranslationsPanel table={table} row={row} onSave={(v) => save("translations", v)} /> : null}
 
@@ -335,5 +337,47 @@ export function RecordLink({ table, row }: { table: TableKey; row: Row }) {
     <Link to="/db/$table/$id" params={{ table, id: row.id }} className="hover:underline">
       {recordLabel(table, row)}
     </Link>
+  );
+}
+
+function SeriesOccurrences({ seriesId, owner, currentId, recurrence }: { seriesId: string; owner: string; currentId: string; recurrence: string | null }) {
+  const { tr, locale } = useI18n();
+  const navigate = useNavigate();
+  const { data } = useList("event", { filters: [{ field: "seriesId", op: "eq", value: seriesId }, { field: "calendarOwner", op: "eq", value: owner }], sorts: [{ field: "startAt", dir: "asc" }], limit: 500 });
+  const rows = data?.rows ?? [];
+  const now = Date.now();
+  const past = rows.filter((r) => new Date(String(r.startAt)).getTime() < now);
+  const next = rows.filter((r) => new Date(String(r.startAt)).getTime() >= now);
+  const item = (r: Row) => (
+    <button
+      key={r.id}
+      type="button"
+      onClick={() => navigate({ to: "/db/$table/$id", params: { table: "event", id: r.id } })}
+      className={cn("flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[13px] hover:bg-hover", r.id === currentId && "bg-hover font-medium")}
+    >
+      <span>{new Date(String(r.startAt)).toLocaleString(locale === "fr" ? "fr-CA" : "en-CA", { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+      {r.id === currentId && <span className="text-xs text-subtle">{tr({ fr: "actuelle", en: "current" })}</span>}
+    </button>
+  );
+  return (
+    <div className="mt-8 rounded-2xl border border-border p-4">
+      <div className="mb-2 flex items-center gap-2 text-[13px] font-medium">
+        <Repeat className="size-4 text-subtle" /> {tr({ fr: "Série", en: "Series" })}
+        {recurrence && <span className="font-normal text-muted">· {recurrence}</span>}
+        <span className="ml-auto text-xs font-normal text-subtle">
+          {past.length} {tr({ fr: "passée(s)", en: "past" })} · {next.length} {tr({ fr: "à venir", en: "upcoming" })}
+        </span>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <div className="mb-1 text-[11px] uppercase tracking-wider text-subtle">{tr({ fr: "À venir", en: "Upcoming" })}</div>
+          <div className="max-h-48 overflow-y-auto">{next.slice(0, 30).map(item)}</div>
+        </div>
+        <div>
+          <div className="mb-1 text-[11px] uppercase tracking-wider text-subtle">{tr({ fr: "Passées", en: "Past" })}</div>
+          <div className="max-h-48 overflow-y-auto">{past.slice().reverse().slice(0, 30).map(item)}</div>
+        </div>
+      </div>
+    </div>
   );
 }

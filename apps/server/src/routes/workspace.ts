@@ -121,7 +121,14 @@ workspace.get("/drive/children", async (c) => {
 workspace.get("/drive/search", async (c) => {
   const q = (c.req.query("q") ?? "").trim();
   const type = c.req.query("type");
-  const where = [eq(schema.document.isFolder, false), sql`${schema.document.driveFileId} is not null`];
+  const parent = c.req.query("parent");
+  const where = [eq(schema.document.isFolder, false), sql`${schema.document.driveFileId} is not null`, sql`coalesce(${schema.document.path}, '') not like '%/_Archives/%'`];
+  if (parent) {
+    // restrict to the selected folder (recursively)
+    const [f] = await db.select({ path: schema.document.path, driveId: schema.document.driveId }).from(schema.document).where(eq(schema.document.driveFileId, parent));
+    if (f?.path) where.push(like(schema.document.path, `${f.path.replace(/[%_]/g, "\\$&")}/%`));
+    else where.push(eq(schema.document.driveId, parent)); // a shared drive root
+  }
   if (type === "pdf") where.push(eq(schema.document.mimeType, "application/pdf"));
   if (type === "doc") where.push(or(like(schema.document.mimeType, "application/vnd.google-apps.document"), like(schema.document.mimeType, "%wordprocessingml%"))!);
   if (type === "sheet") where.push(or(like(schema.document.mimeType, "application/vnd.google-apps.spreadsheet"), like(schema.document.mimeType, "%spreadsheetml%"))!);
@@ -138,6 +145,73 @@ workspace.get("/drive/search", async (c) => {
   }
   const rows = await db.select().from(schema.document).where(and(...where)).orderBy(desc(schema.document.modifiedAt)).limit(200);
   return c.json(rows);
+});
+
+/* ------------------------- Explorer actions (Drive) ------------------------ */
+
+async function docByDrive(id: string) {
+  const [d] = await db.select().from(schema.document).where(eq(schema.document.driveFileId, id));
+  return d;
+}
+
+/** Rename and/or move a file or folder. Paths of the subtree are updated locally. */
+workspace.patch("/drive/file/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json().catch(() => ({}))) as { name?: string; parent?: string };
+  const d = await docByDrive(id);
+  if (!d) return c.json({ error: "Not found" }, 404);
+  const name = body.name?.trim();
+  let parentPath = d.path?.split("/").slice(0, -1).join("/") ?? "";
+  if (body.parent && body.parent !== d.parentId) {
+    const target = await docByDrive(body.parent);
+    const rootName = body.parent === d.driveId ? (d.path ?? "").split("/")[0] : null;
+    if (!target?.isFolder && !rootName) return c.json({ error: "Dossier cible introuvable" }, 400);
+    if (target && target.driveId !== d.driveId) return c.json({ error: "Déplacement entre drives non pris en charge" }, 400);
+    if (target?.path && d.isFolder && (target.path + "/").startsWith(`${d.path}/`)) return c.json({ error: "Impossible de déplacer un dossier dans lui-même" }, 400);
+    parentPath = target?.path ?? rootName!;
+  }
+  if (googleConfigured()) await drive.update(ADMIN, id, name ? { name } : {}, body.parent && body.parent !== d.parentId ? { add: body.parent, remove: d.parentId ?? undefined } : undefined);
+  const newPath = `${parentPath}/${name ?? d.title}`;
+  await db
+    .update(schema.document)
+    .set({ title: name ?? d.title, parentId: body.parent ?? d.parentId, path: newPath, updatedAt: new Date() })
+    .where(eq(schema.document.id, d.id));
+  if (d.isFolder && d.path && newPath !== d.path) {
+    await db.execute(sql`update ${schema.document} set path = ${newPath} || substr(path, ${d.path.length + 1}) where path like ${`${d.path.replace(/[%_]/g, "\\$&")}/%`}`);
+  }
+  await db.insert(schema.activity).values({ table: "document", recordId: d.id, action: "updated", comment: name && name !== d.title ? `Renommé en « ${name} »` : `Déplacé vers ${parentPath}`, userId: c.get("user")?.id });
+  return c.json({ ok: true, path: newPath });
+});
+
+/** Archive = move into the drive's "_Archives" folder (created once, kept out of searches). */
+workspace.post("/drive/file/:id/archive", async (c) => {
+  const id = c.req.param("id");
+  const d = await docByDrive(id);
+  if (!d?.driveId) return c.json({ error: "Not found" }, 404);
+  const root = (d.path ?? "").split("/")[0]!;
+  let [arch] = await db.select().from(schema.document).where(and(eq(schema.document.parentId, d.driveId), eq(schema.document.title, "_Archives"), eq(schema.document.isFolder, true)));
+  if (!arch) {
+    const f = await drive.createFolder(ADMIN, "_Archives", d.driveId);
+    [arch] = await db
+      .insert(schema.document)
+      .values({ title: "_Archives", kind: "document", type: "free", driveFileId: f.id, driveId: d.driveId, parentId: d.driveId, path: `${root}/_Archives`, mimeType: "application/vnd.google-apps.folder", isFolder: true })
+      .returning();
+  }
+  await drive.update(ADMIN, id, {}, { add: arch!.driveFileId!, remove: d.parentId ?? undefined });
+  await db.update(schema.document).set({ parentId: arch!.driveFileId, path: `${root}/_Archives/${d.title}`, updatedAt: new Date() }).where(eq(schema.document.id, d.id));
+  await db.insert(schema.activity).values({ table: "document", recordId: d.id, action: "updated", comment: `Archivé (était dans ${d.path})`, userId: c.get("user")?.id });
+  return c.json({ ok: true });
+});
+
+/** Delete = move to the Drive trash (recoverable 30 days) and remove from the index. */
+workspace.delete("/drive/file/:id", async (c) => {
+  const id = c.req.param("id");
+  const d = await docByDrive(id);
+  if (!d) return c.json({ error: "Not found" }, 404);
+  await drive.update(ADMIN, id, { trashed: true });
+  if (d.isFolder && d.path) await db.delete(schema.document).where(like(schema.document.path, `${d.path.replace(/[%_]/g, "\\$&")}/%`));
+  await db.delete(schema.document).where(eq(schema.document.id, d.id));
+  return c.json({ ok: true });
 });
 
 /* ------------------------------ AI + journal ------------------------------ */

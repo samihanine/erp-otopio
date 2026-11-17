@@ -99,11 +99,10 @@ data.get("/:table/options", async (c) => {
   const lbl = labelExpr(key);
   const subtitleKey = TABLES[key].subtitle;
   const sub = subtitleKey && cols[subtitleKey] && TABLES[key].fields.find((f) => f.key === subtitleKey)?.type !== "relation" ? sql<string>`${cols[subtitleKey]}::text` : sql<string>`null`;
+  const scope = c.req.query("scope") === "employees" && key === "person" ? sql`${cols.email} ilike '%@otopio.ca'` : undefined;
   const where = ids?.length
     ? inArray(cols.id!, ids)
-    : q
-      ? sql`${lbl} ilike ${`%${q}%`}`
-      : undefined;
+    : and(scope, q ? sql`${lbl} ilike ${`%${q}%`}` : undefined);
   const rows = await db
     .select({ id: cols.id!, label: lbl, subtitle: sub })
     .from(TABLE_MAP[key])

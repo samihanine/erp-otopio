@@ -6,11 +6,14 @@ import { env } from "../lib/env";
 
 export const finance = new Hono<AppEnv>();
 
-const inYear = (d: string | null | undefined, year: number) => !!d && d.slice(0, 4) === String(year);
 const today = () => new Date().toISOString().slice(0, 10);
 
 finance.get("/summary", async (c) => {
-  const year = Number(c.req.query("year") ?? new Date().getFullYear());
+  const yq = c.req.query("year") ?? String(new Date().getFullYear());
+  const year = yq === "all" ? "all" : Number(yq);
+  const months = (c.req.query("months") ?? "").split(",").map(Number).filter((m) => m >= 1 && m <= 12);
+  /** date within the selected period (year or all years, optionally restricted to some months) */
+  const inYear = (d: string | null | undefined, _y?: unknown) => !!d && (year === "all" || d.slice(0, 4) === String(year)) && (!months.length || months.includes(Number(d.slice(5, 7))));
   const entityParam = c.req.query("entity") ?? "all";
 
   const [entities, invoices, bills, txs, orgs] = await Promise.all([
@@ -51,15 +54,18 @@ finance.get("/summary", async (c) => {
   const overdue = sum(overdueList.map((i) => conv(i.total - i.amountPaid, i.currency)));
   const expenses = sum(bl.map((b) => conv(b.total, b.currency)));
 
-  const monthly = Array.from({ length: 12 }, (_, m) => {
-    const mm = `${year}-${String(m + 1).padStart(2, "0")}`;
+  // buckets: months of the selected year, or years when "all" is selected
+  const allYears = [...new Set([...invoices.map((i) => i.issueDate), ...bills.map((b) => b.issueDate)].filter(Boolean).map((d) => d!.slice(0, 4)))].sort();
+  const buckets = year === "all" ? allYears : Array.from({ length: 12 }, (_, m) => `${year}-${String(m + 1).padStart(2, "0")}`).filter((mm) => !months.length || months.includes(Number(mm.slice(5, 7))));
+  const monthly = buckets.map((mm) => {
+    const inB = (d: string | null | undefined) => !!d && d.startsWith(mm) && inYear(d);
     return {
       month: mm,
-      revenue: sum(issued.filter((i) => i.issueDate?.startsWith(mm)).map((i) => conv(i.subtotal, i.currency))),
-      expenses: sum(bl.filter((b) => b.issueDate?.startsWith(mm)).map((b) => conv(b.total, b.currency))),
+      revenue: sum(issued.filter((i) => inB(i.issueDate)).map((i) => conv(i.subtotal, i.currency))),
+      expenses: sum(bl.filter((b) => inB(b.issueDate)).map((b) => conv(b.total, b.currency))),
       collected: round2(
-        sum(tx.filter((t) => t.side === "credit" && t.date.startsWith(mm)).map((t) => conv(t.amount, t.currency))) +
-          sum(paidNoFeed.filter((i) => paidOn(i).startsWith(mm)).map((i) => conv(i.amountPaid, i.currency))),
+        sum(tx.filter((t) => t.side === "credit" && inB(t.date)).map((t) => conv(t.amount, t.currency))) +
+          sum(paidNoFeed.filter((i) => inB(paidOn(i))).map((i) => conv(i.amountPaid, i.currency))),
       ),
     };
   });
@@ -94,7 +100,7 @@ finance.get("/summary", async (c) => {
       expenses: sum(eb.map((b) => b.total)),
       invoices: ei.length,
     };
-  });
+  }).sort((a, b) => toCAD(b.revenue, b.currency) - toCAD(a.revenue, a.currency));
 
   // Reconciliation checks
   const txByInvoice = new Map<string, number>();
@@ -155,6 +161,8 @@ finance.get("/summary", async (c) => {
 
   return c.json({
     year,
+    months,
+    years: allYears,
     currency,
     consolidated: !entity,
     kpis: { invoicedHT, invoicedTTC, collected, outstanding, overdue, expenses, margin: round2(invoicedHT - expenses), openCount: open.length },

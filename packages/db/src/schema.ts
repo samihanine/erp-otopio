@@ -94,7 +94,7 @@ export const organizationStatus = pgEnum("organization_status", ["active", "form
 export const projectStatus = pgEnum("project_status", ["idea", "planned", "in_progress", "on_hold", "delivered", "maintenance", "cancelled"]);
 export const taskStatus = pgEnum("task_status", ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]);
 export const priority = pgEnum("priority", ["low", "medium", "high", "urgent"]);
-export const invoiceStatus = pgEnum("invoice_status", ["draft", "sent", "partial", "paid", "overdue", "cancelled"]);
+export const invoiceStatus = pgEnum("invoice_status", ["draft", "sent", "partial", "paid", "overdue", "lost", "cancelled"]);
 export const billStatus = pgEnum("bill_status", ["to_pay", "scheduled", "paid", "cancelled"]);
 export const billCategory = pgEnum("bill_category", [
   "software",
@@ -762,9 +762,17 @@ export const event = pgTable(
     personId: uuid("person_id").references(() => person.id, { onDelete: "set null" }),
     googleEventId: text("google_event_id"),
     htmlLink: text("html_link"),
+    /** Google recurring series id (recurringEventId) shared by every occurrence */
+    seriesId: text("series_id"),
+    /** human readable recurrence of the series, e.g. "Chaque semaine (lun.)" */
+    recurrence: text("recurrence"),
+    /** meeting | call | personal | all_day | travel | deadline | other */
+    kind: text("kind"),
+    /** internal ERP note (not synced to Google) */
+    notes: text("notes"),
     ...timestamps,
   },
-  (t) => [uniqueIndex("event_google_uq").on(t.calendarOwner, t.googleEventId), index("event_start_idx").on(t.startAt)],
+  (t) => [index("event_series_idx").on(t.seriesId), uniqueIndex("event_google_uq").on(t.calendarOwner, t.googleEventId), index("event_start_idx").on(t.startAt)],
 );
 
 export const syncState = pgTable("sync_state", {

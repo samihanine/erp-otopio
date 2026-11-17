@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CheckCircle2, CircleDollarSign, FileWarning, Landmark, Link2Off, Plug, Receipt, Wallet } from "lucide-react";
+import { CalendarRange, AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CheckCircle2, CircleDollarSign, FileWarning, Landmark, Link2Off, Plug, Receipt, Wallet } from "lucide-react";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { formatMoney, TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton, StatusDot } from "@/components/ui/misc";
 
 export type FinanceSummary = {
-  year: number;
+  year: number | "all";
+  years?: string[];
   currency: string;
   consolidated: boolean;
   kpis: { invoicedHT: number; invoicedTTC: number; collected: number; outstanding: number; overdue: number; expenses: number; margin: number; openCount: number };
@@ -37,13 +38,21 @@ export type FinanceSummary = {
 export function FinancePage() {
   const { tr, t, locale } = useI18n();
   const navigate = useNavigate();
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState<string>("all");
+  const [months, setMonths] = useState<number[]>([]);
   const [entity, setEntity] = useState("all");
-  const { data, isLoading } = useQuery({ queryKey: ["finance", "summary", year, entity], queryFn: () => api<FinanceSummary>(`/finance/summary?year=${year}&entity=${entity}`) });
+  const { data, isLoading } = useQuery({
+    queryKey: ["finance", "summary", year, months.join(","), entity],
+    queryFn: () => api<FinanceSummary>(`/finance/summary?year=${year}&months=${months.join(",")}&entity=${entity}`),
+    placeholderData: (prev) => prev,
+  });
+  const years = [...new Set([...(data?.years ?? []), String(new Date().getFullYear())])].sort().reverse();
+  const MONTHS = Array.from({ length: 12 }, (_, i) => fmtDate(`2026-${String(i + 1).padStart(2, "0")}-01`, locale, { month: "short" }).replace(".", ""));
+  const periodLabel = `${year === "all" ? tr({ fr: "Toutes les années", en: "All years" }) : year}${months.length ? ` · ${months.map((m) => MONTHS[m - 1]).join(", ")}` : ""}`;
   const cur = data?.currency ?? "CAD";
   const money = (n: number) => formatMoney(n, cur, locale);
   const catField = TABLES.bill.fields.find((f) => f.key === "category")!;
-  const monthLabel = (m: string) => fmtDate(`${m}-01`, locale, { month: "short" }).replace(".", "");
+  const monthLabel = (m: string) => (m.length === 4 ? m : fmtDate(`${m}-01`, locale, { month: "short" }).replace(".", ""));
 
   const kpis = data?.kpis;
   const checks = data?.checks;
@@ -62,16 +71,6 @@ export function FinancePage() {
               </option>
             ))}
           </select>
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="h-9 rounded-xl border border-border bg-surface px-3 text-[13px] outline-none">
-            {Array.from({ length: new Date().getFullYear() - 2022 }, (_, d) => d).map((d) => {
-              const y = new Date().getFullYear() - d;
-              return (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              );
-            })}
-          </select>
         </div>
       }
     >
@@ -80,7 +79,7 @@ export function FinancePage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight">
-                {t("finance")} <span className="font-serif text-[32px] font-normal italic text-muted">{year}</span>
+                {t("finance")} <span className="font-serif text-[26px] font-normal italic text-muted">{periodLabel}</span>
               </h1>
               <p className="text-[13px] text-muted">
                 {data?.consolidated ? `${t("consolidated")} · EUR × 1,52` : tr({ fr: "Montants dans la devise de la structure", en: "Amounts in entity currency" })}
@@ -96,6 +95,42 @@ export function FinancePage() {
               <Button size="sm" onClick={() => navigate({ to: "/db/$table", params: { table: "transaction" } })}>
                 <Banknote /> {tr(TABLES.transaction.label)}
               </Button>
+            </div>
+          </div>
+
+          {/* Period filter (drives the whole dashboard) */}
+          <div className="sticky top-0 z-10 -mx-2 mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-surface/95 px-3 py-2.5 shadow-card backdrop-blur">
+            <CalendarRange className="size-4 text-subtle" />
+            <div className="flex flex-wrap gap-1">
+              {["all", ...years].map((y) => (
+                <button
+                  key={y}
+                  type="button"
+                  onClick={() => setYear(y)}
+                  className={cn("h-7 rounded-lg px-2.5 text-[13px] font-medium transition", year === y ? "bg-fg text-surface" : "text-muted hover:bg-hover hover:text-fg")}
+                >
+                  {y === "all" ? tr({ fr: "Toutes", en: "All" }) : y}
+                </button>
+              ))}
+            </div>
+            <span className="mx-1 h-5 w-px bg-border max-sm:hidden" />
+            <div className="flex flex-wrap gap-1">
+              <button type="button" onClick={() => setMonths([])} className={cn("h-7 rounded-lg px-2 text-[12.5px] transition", !months.length ? "bg-accent/10 font-medium text-accent" : "text-muted hover:bg-hover")}>
+                {tr({ fr: "Tous les mois", en: "All months" })}
+              </button>
+              {MONTHS.map((m, i) => {
+                const on = months.includes(i + 1);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMonths(on ? months.filter((x) => x !== i + 1) : [...months, i + 1].sort((a, b) => a - b))}
+                    className={cn("h-7 min-w-9 rounded-lg px-1.5 text-[12.5px] capitalize transition", on ? "bg-accent/10 font-medium text-accent ring-1 ring-inset ring-accent/30" : "text-muted hover:bg-hover")}
+                  >
+                    {m}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -131,6 +166,22 @@ export function FinancePage() {
             </div>
           )}
 
+          {/* Reconciliation */}
+          <div className="mt-6 rounded-xl border border-border p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[15px] font-semibold">{t("reconciliation")}</h3>
+              <span className={cn("rounded-md px-1.5 py-0.5 text-xs font-medium", issues ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700")}>{issues ? `${issues} ${tr({ fr: "à vérifier", en: "to review" })}` : "OK"}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted">{tr({ fr: "Chaque recette doit être liée à une facture, chaque dépense à un justificatif.", en: "Every inflow needs an invoice, every expense a receipt." })}</p>
+            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+              <Check icon={Link2Off} label={tr({ fr: "Transactions non rapprochées", en: "Unmatched transactions" })} items={checks?.unmatchedTransactions.map((x) => ({ id: x.id, label: `${x.label} · ${formatMoney(x.amount, x.currency, locale)}` }))} table="transaction" />
+              <Check icon={FileWarning} label={tr({ fr: "Dépenses sans justificatif", en: "Bills without receipt" })} items={checks?.billsWithoutReceipt.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
+              <Check icon={CircleDollarSign} label={tr({ fr: "Dépenses sans montant", en: "Bills without amount" })} items={checks?.billsWithoutAmount.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
+              <Check icon={Receipt} label={tr({ fr: "Factures payées sans encaissement", en: "Paid invoices without payment" })} items={checks?.paidWithoutPayment.map((x) => ({ id: x.id, label: `${x.number}${x.client ? ` · ${x.client}` : ""}` }))} table="invoice" />
+              <Check icon={Wallet} label={tr({ fr: "Dépenses payées sans transaction", en: "Paid bills without transaction" })} items={checks?.paidBillsWithoutTransaction.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
+            </div>
+          </div>
+
           {/* Chart */}
           <div className="mt-6 grid gap-6 lg:grid-cols-3">
             <div className="rounded-xl border border-border p-5 lg:col-span-2">
@@ -154,7 +205,7 @@ export function FinancePage() {
                     <RTooltip
                       cursor={{ fill: "var(--hover)" }}
                       formatter={(v) => money(Number(v))}
-                      labelFormatter={(m) => fmtDate(`${String(m)}-01`, locale, { month: "long", year: "numeric" })}
+                      labelFormatter={(m) => (String(m).length === 4 ? String(m) : fmtDate(`${String(m)}-01`, locale, { month: "long", year: "numeric" }))}
                       contentStyle={{ borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", fontSize: 12 }}
                     />
                     <Bar dataKey="revenue" name={t("revenue")} fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={22} />
@@ -279,49 +330,7 @@ export function FinancePage() {
               </div>
             ) : null}
 
-            {/* Personal life spending */}
-            {data?.personal?.count ? (
-              <div className="rounded-xl border border-border p-5">
-                <div className="flex items-baseline justify-between">
-                  <h3 className="text-[15px] font-semibold">{tr({ fr: "Dépenses perso", en: "Personal spending" })}</h3>
-                  <span className="text-[13px] tabular-nums text-muted">{money(data.personal.total)}</span>
-                </div>
-                <p className="mt-1 text-xs text-muted">{tr({ fr: "Hors chiffres de l'activité (marge, dépenses pro).", en: "Excluded from business figures." })}</p>
-                <div className="mt-3 space-y-2">
-                  {data.personal.byCategory.slice(0, 8).map((c) => {
-                    const opt = catField.options?.find((o) => o.value === c.category);
-                    const max = data.personal!.byCategory[0]?.amount || 1;
-                    return (
-                      <div key={c.category}>
-                        <div className="flex items-center justify-between text-[13px]">
-                          <span className="truncate">{opt ? tr(opt.label) : c.category}</span>
-                          <span className="tabular-nums text-muted">{money(c.amount)}</span>
-                        </div>
-                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                          <div className="h-full rounded-full" style={{ width: `${(c.amount / max) * 100}%`, background: HEX[opt?.color ?? "gray"] }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
 
-            {/* Reconciliation */}
-            <div className="rounded-xl border border-border p-5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[15px] font-semibold">{t("reconciliation")}</h3>
-                <span className={cn("rounded-md px-1.5 py-0.5 text-xs font-medium", issues ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700")}>{issues ? `${issues} ${tr({ fr: "à vérifier", en: "to review" })}` : "OK"}</span>
-              </div>
-              <p className="mt-1 text-xs text-muted">{tr({ fr: "Chaque recette doit être liée à une facture, chaque dépense à un justificatif.", en: "Every inflow needs an invoice, every expense a receipt." })}</p>
-              <div className="mt-4 space-y-2">
-                <Check icon={Link2Off} label={tr({ fr: "Transactions non rapprochées", en: "Unmatched transactions" })} items={checks?.unmatchedTransactions.map((x) => ({ id: x.id, label: `${x.label} · ${formatMoney(x.amount, x.currency, locale)}` }))} table="transaction" />
-                <Check icon={FileWarning} label={tr({ fr: "Dépenses sans justificatif", en: "Bills without receipt" })} items={checks?.billsWithoutReceipt.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
-                <Check icon={CircleDollarSign} label={tr({ fr: "Dépenses sans montant", en: "Bills without amount" })} items={checks?.billsWithoutAmount.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
-                <Check icon={Receipt} label={tr({ fr: "Factures payées sans encaissement", en: "Paid invoices without payment" })} items={checks?.paidWithoutPayment.map((x) => ({ id: x.id, label: `${x.number}${x.client ? ` · ${x.client}` : ""}` }))} table="invoice" />
-                <Check icon={Wallet} label={tr({ fr: "Dépenses payées sans transaction", en: "Paid bills without transaction" })} items={checks?.paidBillsWithoutTransaction.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
-              </div>
-            </div>
           </div>
         </div>
       </div>

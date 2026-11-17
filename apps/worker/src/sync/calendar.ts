@@ -10,7 +10,35 @@ import { directory, getState, log, MEMBERS, setState } from "./common";
 const meetLink = (e: GEvent) =>
   e.hangoutLink ?? e.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri ?? (e.description ?? e.location ?? "").match(/https:\/\/(teams\.microsoft\.com|[\w.]*zoom\.us)\/[^\s"<>]+/)?.[0] ?? null;
 
+const DAYS: Record<string, string> = { MO: "lun.", TU: "mar.", WE: "mer.", TH: "jeu.", FR: "ven.", SA: "sam.", SU: "dim." };
+/** RRULE → short French text ("Chaque semaine (lun., mer.)", "Chaque mois", …). */
+export function humanRecurrence(rules?: string[]) {
+  const r = rules?.find((x) => x.startsWith("RRULE:"));
+  if (!r) return null;
+  const p = Object.fromEntries(r.slice(6).split(";").map((kv) => kv.split("=") as [string, string]));
+  const every = Number(p.INTERVAL ?? 1);
+  const unit = { DAILY: ["jour", "jours"], WEEKLY: ["semaine", "semaines"], MONTHLY: ["mois", "mois"], YEARLY: ["an", "ans"] }[p.FREQ as string] ?? ["fois", "fois"];
+  let txt = every > 1 ? `Toutes les ${every} ${unit[1]}` : `Chaque ${unit[0]}`;
+  if (p.BYDAY) txt += ` (${p.BYDAY.split(",").map((d: string) => DAYS[d.slice(-2)] ?? d).join(", ")})`;
+  if (p.UNTIL) txt += ` jusqu'au ${p.UNTIL.slice(6, 8)}/${p.UNTIL.slice(4, 6)}/${p.UNTIL.slice(0, 4)}`;
+  if (p.COUNT) txt += ` · ${p.COUNT} fois`;
+  return txt;
+}
+
+/** Event kind used by the calendar list filter. */
+function kindOf(e: GEvent, priv: boolean, ext: string[]) {
+  if (priv) return "personal";
+  if (e.start.date) return "all_day";
+  const t = `${e.summary ?? ""} ${e.location ?? ""}`.toLowerCase();
+  if (/vol |flight|train|aéroport|airport|✈/.test(t)) return "travel";
+  if (/deadline|échéance|rendu|due/.test(t)) return "deadline";
+  if (meetLink(e) || ext.length) return "meeting";
+  if (/appel|call|tel|téléphone/.test(t)) return "call";
+  return "other";
+}
+
 export async function syncCalendars() {
+  const seriesCache = new Map<string, string | null>();
   const dir = await directory();
   const stats: Record<string, number> = {};
   for (const owner of MEMBERS) {
@@ -59,7 +87,18 @@ export async function syncCalendars() {
         projectId: priv ? null : (m.project?.id ?? null),
         googleEventId: e.id,
         htmlLink: e.htmlLink ?? null,
+        seriesId: e.recurringEventId ?? null,
+        recurrence: null as string | null,
+        kind: kindOf(e, priv, attendees.filter((x) => !x.endsWith("@otopio.ca"))),
       };
+      if (e.recurringEventId) {
+        const k = `${owner}:${e.recurringEventId}`;
+        if (!seriesCache.has(k)) {
+          const master = await calendar.get(owner, "primary", e.recurringEventId).catch(() => null);
+          seriesCache.set(k, humanRecurrence(master?.recurrence));
+        }
+        values.recurrence = seriesCache.get(k) ?? "Série";
+      }
       await db
         .insert(schema.event)
         .values(values)

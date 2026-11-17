@@ -111,9 +111,9 @@ const queue = new Queue(QUEUE, { connection });
 await queue.upsertJobScheduler("db-backup", { pattern: env.BACKUP_CRON ?? "0 3 * * *" }, { name: "db-backup", opts: { removeOnComplete: 30, removeOnFail: 30 } });
 const keep = { removeOnComplete: 20, removeOnFail: 50 };
 if (env.SYNC_ENABLED !== "false") {
-  await queue.upsertJobScheduler("drive-sync", { every: 10 * 60_000 }, { name: "drive-sync", opts: keep });
-  await queue.upsertJobScheduler("calendar-sync", { every: 10 * 60_000 }, { name: "calendar-sync", opts: keep });
-  await queue.upsertJobScheduler("gmail-sync", { every: 15 * 60_000 }, { name: "gmail-sync", opts: keep });
+  await queue.upsertJobScheduler("drive-sync", { every: 5 * 60_000 }, { name: "drive-sync", opts: keep });
+  await queue.upsertJobScheduler("calendar-sync", { every: 2 * 60_000 }, { name: "calendar-sync", opts: keep });
+  await queue.upsertJobScheduler("gmail-sync", { every: 5 * 60_000 }, { name: "gmail-sync", opts: keep });
   await queue.upsertJobScheduler("ai-sync", { every: 60 * 60_000 }, { name: "ai-sync", opts: keep });
 } else {
   for (const id of ["drive-sync", "calendar-sync", "gmail-sync", "ai-sync"]) await queue.removeJobScheduler(id).catch(() => {});

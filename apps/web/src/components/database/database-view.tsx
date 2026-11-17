@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { TABLE_GROUPS, TABLES, type TableKey, type ViewType } from "@erp/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { useI18n, type DictKey } from "@/lib/i18n";
+import type { Row } from "@/lib/api";
 import { defaultConfig, useCreateRecord, useDeleteRecord, useList, useUpdateRecord, useViewMutations, useViews, type SavedView, type ViewConfig } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { EmptyState, Icon, Skeleton, TableTile } from "@/components/ui/misc";
 import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparator, DropdownTrigger } from "@/components/ui/dropdown";
 import { Sheet } from "@/components/ui/dialog";
 import { useIsMobile } from "@/lib/use-media";
+import { ShellNavButtons, ShellSearchButton } from "@/components/layout/app-shell";
 import { FieldsMenu, FilterMenu, LayoutMenu, SortMenu } from "./toolbar";
 import { TableView } from "./table-view";
 import { CalendarView, GalleryView, KanbanView, ListView } from "./board-views";
@@ -90,14 +92,39 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
   };
 
   const isMobile = useIsMobile();
-  const rows = data?.rows ?? [];
+  const rawRows = data?.rows ?? [];
+  // Events: future occurrences of a recurring series are shown as a single row (except in the calendar view)
+  const rows = useMemo(() => {
+    if (table !== "event" || type === "calendar") return rawRows;
+    const now = Date.now();
+    const seen = new Map<string, Row>();
+    const out: Row[] = [];
+    for (const r of rawRows) {
+      const sid = r.seriesId as string | null;
+      if (!sid || new Date(String(r.startAt)).getTime() < now) {
+        out.push(r);
+        continue;
+      }
+      const key = `${r.calendarOwner}:${sid}`;
+      const first = seen.get(key);
+      if (first) {
+        first._seriesCount = Number(first._seriesCount) + 1;
+        continue;
+      }
+      const copy = { ...r, _seriesCount: 1 };
+      seen.set(key, copy);
+      out.push(copy);
+    }
+    return out;
+  }, [rawRows, table, type]);
   const refs = data?.refs ?? {};
   const common = { table, rows, refs, config, onUpdate, onOpen, onCreate };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-4 md:px-6 md:pt-6">
+      <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 md:gap-3 md:px-5 md:pt-4">
+        <ShellNavButtons />
         <Dropdown>
           <DropdownTrigger className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 outline-none">
             <TableTile icon={def.icon} color={def.color} />
@@ -125,6 +152,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
           {isFetching && !isLoading ? <span className="ml-2 inline-block size-1.5 animate-pulse rounded-full bg-accent align-middle" /> : null}
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <ShellSearchButton />
           <Button variant="primary" size="md" onClick={() => onCreate()}>
             <Plus /> <span className="max-sm:hidden">{t("new")}</span>
           </Button>
@@ -188,7 +216,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
             </button>
           )}
         </div>
-        <FilterMenu table={table} config={config} onChange={setConfig} />
+        {(type !== "table" || isMobile) && <FilterMenu table={table} config={config} onChange={setConfig} />}
         <SortMenu table={table} config={config} onChange={setConfig} />
         <FieldsMenu table={table} config={config} onChange={setConfig} />
         <LayoutMenu table={table} config={config} onChange={setConfig} type={type} />

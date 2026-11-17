@@ -65,10 +65,10 @@ export function useRelated(table: TableKey, id: string | null | undefined) {
   });
 }
 
-export function useOptions(table: TableKey | undefined, q: string, enabled = true) {
+export function useOptions(table: TableKey | undefined, q: string, enabled = true, scope?: string) {
   return useQuery({
-    queryKey: ["options", table, q],
-    queryFn: () => api<{ id: string; label: string; subtitle?: string | null }[]>(`/data/${table}/options?q=${encodeURIComponent(q)}`),
+    queryKey: ["options", table, q, scope],
+    queryFn: () => api<{ id: string; label: string; subtitle?: string | null }[]>(`/data/${table}/options?q=${encodeURIComponent(q)}${scope ? `&scope=${scope}` : ""}`),
     enabled: Boolean(table) && enabled,
     staleTime: 30_000,
   });

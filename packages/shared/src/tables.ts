@@ -39,6 +39,8 @@ export type FieldDef = {
   options?: SelectOption[];
   /** relation target table */
   relation?: TableKey;
+  /** restrict relation choices, e.g. "employees" = people with an @otopio.ca address */
+  relationScope?: "employees";
   /** for currency fields, the key of the field holding the ISO currency */
   currencyField?: string;
   required?: boolean;
@@ -358,7 +360,7 @@ export const TABLES: Record<TableKey, TableDef> = {
         ],
       },
       { key: "projectId", label: L("Projet", "Project"), type: "relation", relation: "project", width: 180 },
-      { key: "assigneeId", label: L("Assigné à", "Assignee"), type: "relation", relation: "person", width: 160 },
+      { key: "assigneeId", label: L("Assigné à", "Assignee"), type: "relation", relation: "person", relationScope: "employees", width: 160 },
       { key: "priority", label: L("Priorité", "Priority"), type: "select", options: PRIORITY_OPTIONS },
       { key: "estimateHours", label: L("Estimé (h)", "Estimate (h)"), type: "number", width: 110 },
       { key: "spentHours", label: L("Passé (h)", "Spent (h)"), type: "number", width: 110 },
@@ -405,7 +407,7 @@ export const TABLES: Record<TableKey, TableDef> = {
       { key: "projectId", label: L("Projet", "Project"), type: "relation", relation: "project", width: 180 },
       { key: "organizationId", label: L("Client", "Client"), type: "relation", relation: "organization" },
       { key: "requesterId", label: L("Demandé par", "Requested by"), type: "relation", relation: "person" },
-      { key: "assigneeId", label: L("Responsable", "Assignee"), type: "relation", relation: "person" },
+      { key: "assigneeId", label: L("Responsable", "Assignee"), type: "relation", relation: "person", relationScope: "employees" },
       { key: "priority", label: L("Priorité", "Priority"), type: "select", options: PRIORITY_OPTIONS },
       {
         key: "category",
@@ -505,6 +507,7 @@ export const TABLES: Record<TableKey, TableDef> = {
           o("partial", "Partiellement payée", "Partially paid", "yellow"),
           o("paid", "Payée", "Paid", "green"),
           o("overdue", "En retard", "Overdue", "red"),
+          o("lost", "En perte", "Written off", "gray"),
           o("cancelled", "Annulée", "Cancelled", "gray"),
         ],
       },
@@ -745,7 +748,7 @@ export const TABLES: Record<TableKey, TableDef> = {
 
   team_member: {
     key: "team_member",
-    label: L("Équipe (site)", "Team (site)"),
+    label: L("Équipe", "Team"),
     singular: L("Membre", "Member"),
     icon: "UsersRound",
     color: "teal",
@@ -931,7 +934,24 @@ export const TABLES: Record<TableKey, TableDef> = {
       { key: "location", label: L("Lieu", "Location"), type: "text", hidden: true },
       { key: "attendees", label: L("Participants", "Attendees"), type: "tags" },
       { key: "isPrivate", label: L("Privé", "Private"), type: "checkbox", hidden: true },
+      {
+        key: "kind",
+        label: L("Type", "Type"),
+        type: "select",
+        options: [
+          o("meeting", "Réunion", "Meeting", "blue"),
+          o("call", "Appel", "Call", "teal"),
+          o("personal", "Perso / occupé", "Personal / busy", "gray"),
+          o("all_day", "Journée entière", "All day", "purple"),
+          o("travel", "Déplacement", "Travel", "sky"),
+          o("deadline", "Échéance", "Deadline", "red"),
+          o("other", "Autre", "Other", "gray"),
+        ],
+      },
+      { key: "recurrence", label: L("Récurrence", "Recurrence"), type: "text", readOnly: true },
+      { key: "seriesId", label: L("Série", "Series"), type: "text", readOnly: true, hidden: true },
       { key: "description", label: L("Description", "Description"), type: "longtext", hidden: true },
+      { key: "notes", label: L("Note", "Note"), type: "longtext", hidden: true },
       { key: "htmlLink", label: L("Google Agenda", "Google Calendar"), type: "url", readOnly: true, hidden: true },
       ...timestampsFields,
     ],

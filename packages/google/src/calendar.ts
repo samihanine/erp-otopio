@@ -17,6 +17,7 @@ export type GEvent = {
   htmlLink?: string;
   updated?: string;
   recurringEventId?: string;
+  recurrence?: string[];
   iCalUID?: string;
   extendedProperties?: { private?: Record<string, string> };
 };
@@ -49,6 +50,7 @@ export const calendar = {
     }),
   patch: (user: string, calendarId: string, id: string, ev: Partial<GEvent>) =>
     gfetch<GEvent>(user, SCOPES.calendar, `${C}/calendars/${encodeURIComponent(calendarId)}/events/${id}?sendUpdates=all`, { method: "PATCH", json: ev }),
+  get: (user: string, calendarId: string, id: string) => gfetch<GEvent>(user, SCOPES.calendar, `${C}/calendars/${encodeURIComponent(calendarId)}/events/${id}`),
   remove: (user: string, calendarId: string, id: string) =>
     gfetch(user, SCOPES.calendar, `${C}/calendars/${encodeURIComponent(calendarId)}/events/${id}?sendUpdates=all`, { method: "DELETE" }),
 };

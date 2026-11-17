@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as Dl from "@radix-ui/react-dialog";
 import { Briefcase, CalendarDays, Database, FileText, Globe, Home, Languages, LogOut, Menu as MenuIcon, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings, Sun, Wallet, X } from "lucide-react";
@@ -21,6 +21,55 @@ const SECTIONS: Section[] = [
   { key: "finance", to: "/finance", icon: Wallet, label: "finance", match: (p) => p.startsWith("/finance") },
   { key: "website", to: "/website", icon: Globe, label: "website", match: (p) => p.startsWith("/website") },
 ];
+
+/** Shell controls usable by pages that render their own header (`header={false}`). */
+type ShellCtx = { openMenu: () => void; openSearch: () => void; toggleSidebar: () => void; sidebarOpen: boolean; hasSidebar: boolean; wide: boolean };
+const ShellContext = createContext<ShellCtx | null>(null);
+export const useShell = () => useContext(ShellContext);
+
+/** Menu (mobile) / panel toggle (desktop) buttons. */
+export function ShellNavButtons() {
+  const s = useShell();
+  const { tr } = useI18n();
+  if (!s) return null;
+  return (
+    <>
+      <button type="button" onClick={s.openMenu} className={cn("grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg", s.hasSidebar ? "lg:hidden" : "md:hidden")} aria-label="Menu">
+        <MenuIcon className="size-[18px]" />
+      </button>
+      {s.hasSidebar && s.wide ? (
+        <button
+          type="button"
+          onClick={s.toggleSidebar}
+          className="grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg"
+          title={s.sidebarOpen ? tr({ fr: "Masquer le panneau", en: "Hide panel" }) : tr({ fr: "Afficher le panneau", en: "Show panel" })}
+        >
+          {s.sidebarOpen ? <PanelLeftClose className="size-[18px]" /> : <PanelLeftOpen className="size-[18px]" />}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+/** Global search button (⌘K). */
+export function ShellSearchButton({ className }: { className?: string }) {
+  const s = useShell();
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      onClick={() => s?.openSearch()}
+      className={cn("flex h-8 w-56 items-center gap-2 rounded-lg border border-border px-2.5 text-[13px] text-subtle transition hover:text-muted max-md:w-8 max-md:px-2", className)}
+    >
+      <Search className="size-4 shrink-0" />
+      <span className="truncate max-md:hidden">{t("search")}</span>
+      <span className="ml-auto flex gap-0.5 max-md:hidden">
+        <Kbd>⌘</Kbd>
+        <Kbd>K</Kbd>
+      </span>
+    </button>
+  );
+}
 
 function useTheme() {
   const [dark, setDark] = useState(() => {
@@ -56,7 +105,7 @@ function RailLink({ to, icon: I, label, active }: { to: string; icon: typeof Hom
  *  - `sidebar`: section navigation (e.g. the list of tables). Collapsible on desktop,
  *    and shown in the slide-over menu on mobile / tablet.
  */
-export function AppShell({ children, title, actions, parent, sidebar }: { children: ReactNode; title?: ReactNode; actions?: ReactNode; parent?: { label: string; to: string }; sidebar?: ReactNode }) {
+export function AppShell({ children, title, actions, parent, sidebar, header = true }: { children: ReactNode; title?: ReactNode; actions?: ReactNode; parent?: { label: string; to: string }; sidebar?: ReactNode; header?: boolean }) {
   const { t, locale, setLocale, tr } = useI18n();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { data: session } = useSession();
@@ -83,7 +132,10 @@ export function AppShell({ children, title, actions, parent, sidebar }: { childr
 
   const user = session?.user;
 
+  const ctx: ShellCtx = { openMenu: () => setMenuOpen(true), openSearch: () => setCmdOpen(true), toggleSidebar: () => setSidebarOpen(!sidebarOpen), sidebarOpen, hasSidebar: Boolean(sidebar), wide };
+
   return (
+    <ShellContext.Provider value={ctx}>
     <div className="flex h-full bg-surface">
       <aside className="hidden w-[84px] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2/50 px-2 py-4 md:flex">
         <Link to="/" className="mb-4 grid size-10 place-items-center rounded-xl bg-navy text-sky-brand transition hover:opacity-90" title="Otopio">
@@ -158,7 +210,7 @@ export function AppShell({ children, title, actions, parent, sidebar }: { childr
       </Dl.Root>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:px-6">
+        {header && <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:px-6">
           {/* menu button: mobile always, tablet when a section sidebar exists */}
           <button
             type="button"
@@ -204,10 +256,11 @@ export function AppShell({ children, title, actions, parent, sidebar }: { childr
               </span>
             </button>
           </div>
-        </header>
+        </header>}
         <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
       </div>
       <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} />
     </div>
+    </ShellContext.Provider>
   );
 }

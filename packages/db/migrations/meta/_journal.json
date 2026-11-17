@@ -43,6 +43,13 @@
       "when": 1794815072506,
       "tag": "0005_website_cms_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794956559167,
+      "tag": "0006_invoice_lost_event_series",
+      "breakpoints": true
     }
   ]
 }

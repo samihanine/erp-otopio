@@ -45,7 +45,7 @@ export const drive = {
   get: (user: string, id: string) => gfetch<DriveFile>(user, SCOPES.drive, `${D}/files/${id}?${ALL}&fields=${FIELDS}`),
   createFolder: (user: string, name: string, parent: string) =>
     gfetch<DriveFile>(user, SCOPES.drive, `${D}/files?${ALL}&fields=${FIELDS}`, { method: "POST", json: { name, mimeType: FOLDER, parents: [parent] } }),
-  update: (user: string, id: string, body: { name?: string }, move?: { add?: string; remove?: string }) =>
+  update: (user: string, id: string, body: { name?: string; trashed?: boolean }, move?: { add?: string; remove?: string }) =>
     gfetch<DriveFile>(
       user,
       SCOPES.drive,

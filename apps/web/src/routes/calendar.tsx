@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight, Lock, Plus, RefreshCw, Video } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, Plus, RefreshCw, Repeat, Video } from "lucide-react";
+import { TABLES } from "@erp/shared";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { api, type Row } from "@/lib/api";
@@ -8,7 +9,7 @@ import { fmtDate, useI18n } from "@/lib/i18n";
 import { useCreateRecord, useList, useOptions } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Segmented } from "@/components/ui/misc";
+import { OptionBadge, Segmented } from "@/components/ui/misc";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input, inputClass } from "@/components/ui/input";
 
@@ -32,7 +33,8 @@ const HOUR_PX = 48;
 export function CalendarPage() {
   const { tr, locale } = useI18n();
   const navigate = useNavigate();
-  const [view, setView] = useState<"week" | "month">("week");
+  const [view, setView] = useState<"week" | "month" | "list">("week");
+  const [kinds, setKinds] = useState<string[]>([]);
   const [cursor, setCursor] = useState(() => new Date());
   const [members, setMembers] = useState<string[]>(MEMBERS.map((m) => m.email));
   const [client, setClient] = useState<string>("");
@@ -108,7 +110,7 @@ export function CalendarPage() {
             </Button>
           </div>
           <h1 className="text-[17px] font-semibold capitalize">{title}</h1>
-          <Segmented value={view} onChange={setView} options={[{ value: "week", label: tr({ fr: "Semaine", en: "Week" }) }, { value: "month", label: tr({ fr: "Mois", en: "Month" }) }]} />
+          <Segmented value={view} onChange={setView} options={[{ value: "week", label: tr({ fr: "Semaine", en: "Week" }) }, { value: "month", label: tr({ fr: "Mois", en: "Month" }) }, { value: "list", label: tr({ fr: "Liste", en: "List" }) }]} />
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
             {MEMBERS.map((m) => {
               const on = members.includes(m.email);
@@ -135,7 +137,9 @@ export function CalendarPage() {
           </div>
         </div>
 
-        {view === "week" ? (
+        {view === "list" ? (
+          <EventList events={events} kinds={kinds} setKinds={setKinds} onOpen={open} />
+        ) : view === "week" ? (
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
             <div className="sticky top-0 z-10 grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-border bg-surface">
               <div />
@@ -246,7 +250,7 @@ function NewEvent({ at, onClose }: { at: Date | null; onClose: () => void }) {
   const { data: clients = [] } = useOptions("organization", "");
   const pad = (n: number) => String(n).padStart(2, "0");
   const local = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const [form, setForm] = useState({ title: "", start: "", minutes: 60, attendees: "", org: "", owner: "", description: "" });
+  const [form, setForm] = useState({ title: "", start: "", minutes: 60, attendees: "", org: "", owner: "", description: "", notes: "" });
   const isOpen = Boolean(at);
   if (isOpen && !form.start) setTimeout(() => setForm((f) => ({ ...f, start: local(at!) })), 0);
   const submit = async () => {
@@ -258,10 +262,11 @@ function NewEvent({ at, onClose }: { at: Date | null; onClose: () => void }) {
       attendees: form.attendees.split(/[\s,;]+/).filter((x) => x.includes("@")),
       organizationId: form.org || null,
       description: form.description || null,
+      notes: form.notes || null,
       ...(form.owner ? { calendarOwner: form.owner } : {}),
     });
     toast.success(tr({ fr: "Événement créé — invitation Google + lien Meet en cours", en: "Event created — Google invite + Meet link on the way" }));
-    setForm({ title: "", start: "", minutes: 60, attendees: "", org: "", owner: "", description: "" });
+    setForm({ title: "", start: "", minutes: 60, attendees: "", org: "", owner: "", description: "", notes: "" });
     onClose();
   };
   return (
@@ -299,6 +304,7 @@ function NewEvent({ at, onClose }: { at: Date | null; onClose: () => void }) {
             </select>
           </div>
           <textarea placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className={cn(inputClass, "h-auto py-2")} />
+          <textarea placeholder={tr({ fr: "Note interne (non partagée dans Google Agenda)", en: "Internal note (not shared to Google Calendar)" })} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className={cn(inputClass, "h-auto py-2")} />
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
           <Button variant="ghost" onClick={onClose}>
@@ -313,3 +319,77 @@ function NewEvent({ at, onClose }: { at: Date | null; onClose: () => void }) {
   );
 }
 
+
+const KIND_FIELD = TABLES.event.fields.find((f) => f.key === "kind")!;
+
+function EventList({ events, kinds, setKinds, onOpen }: { events: (Row & { owners: string[] })[]; kinds: string[]; setKinds: (k: string[]) => void; onOpen: (e: Row) => void }) {
+  const { tr, locale } = useI18n();
+  const list = events.filter((e) => !kinds.length || kinds.includes(String(e.kind ?? "other"))).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
+  const byDay = new Map<string, typeof list>();
+  for (const e of list) {
+    const d = new Date(String(e.startAt)).toDateString();
+    byDay.set(d, [...(byDay.get(d) ?? []), e]);
+  }
+  const counts = new Map<string, number>();
+  for (const e of events) counts.set(String(e.kind ?? "other"), (counts.get(String(e.kind ?? "other")) ?? 0) + 1);
+  const time = (d: unknown) => new Date(String(d)).toLocaleTimeString(locale === "fr" ? "fr-CA" : "en-CA", { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="sticky top-0 z-10 flex flex-wrap gap-1.5 border-b border-border bg-surface px-6 py-2.5">
+        <button type="button" onClick={() => setKinds([])} className={cn("h-7 rounded-full px-3 text-xs font-medium", !kinds.length ? "bg-fg text-surface" : "text-muted ring-1 ring-inset ring-border hover:text-fg")}>
+          {tr({ fr: "Tous", en: "All" })} · {events.length}
+        </button>
+        {KIND_FIELD.options!.map((o) => {
+          const on = kinds.includes(o.value);
+          const n = counts.get(o.value) ?? 0;
+          if (!n) return null;
+          return (
+            <button key={o.value} type="button" onClick={() => setKinds(on ? kinds.filter((k) => k !== o.value) : [...kinds, o.value])} className={cn("h-7 rounded-full px-3 text-xs", on ? "bg-accent/10 font-medium text-accent ring-1 ring-inset ring-accent/30" : "text-muted ring-1 ring-inset ring-border hover:text-fg")}>
+              {tr(o.label)} · {n}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mx-auto max-w-4xl px-4 py-4 md:px-6">
+        {[...byDay.entries()].map(([d, evs]) => {
+          const date = new Date(d);
+          const today = sameDay(date, new Date());
+          return (
+            <div key={d} className="mb-5">
+              <div className={cn("mb-1.5 text-[12px] font-medium uppercase tracking-wider", today ? "text-accent" : "text-subtle")}>
+                {date.toLocaleDateString(locale === "fr" ? "fr-CA" : "en-CA", { weekday: "long", day: "numeric", month: "long" })}
+                {today && ` · ${tr({ fr: "aujourd'hui", en: "today" })}`}
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border">
+                {evs.map((e) => {
+                  const opt = KIND_FIELD.options!.find((o) => o.value === (e.kind ?? "other"));
+                  return (
+                    <button key={e.id} type="button" onClick={() => onOpen(e)} className="flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left text-[13px] last:border-0 hover:bg-hover">
+                      <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: colorOf(e.owners[0]!) }} />
+                      <span className="w-24 shrink-0 tabular-nums text-muted">{e.allDay ? tr({ fr: "Journée", en: "All day" }) : `${time(e.startAt)} – ${time(e.endAt)}`}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          {e.isPrivate ? <Lock className="size-3 text-subtle" /> : e.meetUrl ? <Video className="size-3 text-subtle" /> : null}
+                          <span className="truncate">{String(e.title)}</span>
+                          {e.recurrence ? <Repeat className="size-3 shrink-0 text-subtle" /> : null}
+                        </span>
+                        {e.location || e.notes ? <span className="block truncate text-xs text-subtle">{String(e.notes ?? e.location)}</span> : null}
+                      </span>
+                      {opt && <OptionBadge option={opt} />}
+                      <span className="hidden gap-0.5 sm:flex">
+                        {e.owners.map((o) => (
+                          <span key={o} className="size-2 rounded-full" style={{ background: colorOf(o) }} />
+                        ))}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {!list.length && <div className="py-16 text-center text-[13px] text-subtle">{tr({ fr: "Aucun événement sur cette période.", en: "No events in this period." })}</div>}
+      </div>
+    </div>
+  );
+}

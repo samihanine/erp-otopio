@@ -120,7 +120,7 @@ export function DatabasePage() {
   const navigate = useNavigate();
   const { tr, t } = useI18n();
   return (
-    <AppShell title={tr(TABLES[table as TableKey].label)} parent={{ label: t("database"), to: "/db/project" }} sidebar={<DatabaseSidebar current={table as TableKey} viewId={search.view} />}>
+    <AppShell header={false} title={tr(TABLES[table as TableKey].label)} parent={{ label: t("database"), to: "/db/project" }} sidebar={<DatabaseSidebar current={table as TableKey} viewId={search.view} />}>
       <DatabaseView
         key={table}
         table={table as TableKey}

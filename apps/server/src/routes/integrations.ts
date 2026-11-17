@@ -13,12 +13,12 @@ integrations.get("/status", async (c) => {
   return c.json({
     google: { connected: authEnabledProviders().google, scope: "Gmail · Drive · Docs" },
     github: { connected: Boolean(env.githubToken), org: env.githubOrg },
-    cloudflare: { connected: Boolean(env.cloudflareToken) },
+    cloudflare: { connected: Boolean(cfHeaders()) },
     r2: { connected: r2Configured(), bucket: env.r2.bucket },
     redis: { connected: await redisOk() },
     qonto: { connected: env.qonto, entities: entities.filter((e) => e.provider === "qonto") },
     quickbooks: { connected: env.quickbooks, entities: entities.filter((e) => e.provider === "quickbooks") },
-    website: { connected: Boolean(env.cloudflareToken), domain: "otopio.ca" },
+    website: { connected: Boolean(cfHeaders()), domain: "otopio.ca" },
   });
 });
 
@@ -49,48 +49,92 @@ integrations.get("/github/:owner/:repo", async (c) => {
  * Website analytics. Real data will come from Cloudflare Web Analytics (GraphQL)
  * once CLOUDFLARE_API_TOKEN is set; until then a deterministic demo series.
  */
-integrations.get("/website/analytics", async (c) => {
-  const days = Math.min(Number(c.req.query("days") ?? 30), 365);
-  let seed = 42;
-  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const series = Array.from({ length: days }, (_, i) => {
-    const d = new Date(Date.now() - (days - 1 - i) * 864e5);
-    const weekday = d.getDay() % 6 === 0 ? 0.55 : 1;
-    const visitors = Math.round((120 + i * 1.8 + rand() * 60) * weekday);
-    return { date: d.toISOString().slice(0, 10), visitors, pageviews: Math.round(visitors * (2.1 + rand() * 0.8)) };
+/* ------------------------- Website analytics (Cloudflare) ------------------------- */
+const CF_ZONES = (process.env.CLOUDFLARE_SITE_ZONES ?? "otopio.ca,otopio.fr,otopio.net").split(",").map((z) => z.trim()).filter(Boolean);
+const cfHeaders = (): Record<string, string> | null => {
+  if (process.env.CLOUDFLARE_API_KEY && process.env.CLOUDFLARE_EMAIL) return { "X-Auth-Email": process.env.CLOUDFLARE_EMAIL, "X-Auth-Key": process.env.CLOUDFLARE_API_KEY };
+  if (env.cloudflareToken) return { authorization: `Bearer ${env.cloudflareToken}` };
+  return null;
+};
+let zoneIds: Record<string, string> | null = null;
+async function cfZones(h: Record<string, string>) {
+  if (zoneIds) return zoneIds;
+  const r = (await (await fetch("https://api.cloudflare.com/client/v4/zones?per_page=50", { headers: h })).json()) as { result?: { id: string; name: string }[] };
+  zoneIds = Object.fromEntries((r.result ?? []).filter((z) => CF_ZONES.includes(z.name)).map((z) => [z.name, z.id]));
+  return zoneIds;
+}
+type DayRow = { dimensions: { date: string }; sum: { requests: number; pageViews: number; countryMap: { clientCountryName: string; requests: number }[]; browserMap: { pageViews: number; uaBrowserFamily: string }[] }; uniq: { uniques: number } };
+const BOT_PATH = /^\/(\.|wp-|cdn-cgi|xmlrpc|admin\.php|vendor|phpmyadmin|cgi-bin)|\.(php|env|bak|sql|ini|log)$/i;
+
+async function zoneAnalytics(h: Record<string, string>, zoneId: string, days: number) {
+  const day = (d: number) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
+  const q = (withPaths: number) => ({
+    query: `query($z:String!,$s:Date!,$e:Date!,$t0:Time!,$t1:Time!){viewer{zones(filter:{zoneTag:$z}){d:httpRequests1dGroups(limit:400,filter:{date_geq:$s,date_leq:$e},orderBy:[date_ASC]){dimensions{date} sum{requests pageViews countryMap{clientCountryName requests} browserMap{pageViews uaBrowserFamily}} uniq{uniques}} ${withPaths ? `p:httpRequestsAdaptiveGroups(limit:40,filter:{datetime_geq:$t0,datetime_leq:$t1,requestSource:"eyeball",edgeResponseContentTypeName:"html",edgeResponseStatus:200},orderBy:[count_DESC]){count dimensions{clientRequestPath}}` : ""}}}}`,
+    variables: { z: zoneId, s: day(days - 1), e: day(0), t0: new Date(Date.now() - withPaths * 864e5).toISOString(), t1: new Date().toISOString() },
   });
-  const sum = (k: "visitors" | "pageviews") => series.reduce((a, s) => a + s[k], 0);
+  for (const pd of [Math.min(days, 7), 1, 0]) {
+    const r = (await (await fetch("https://api.cloudflare.com/client/v4/graphql", { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify(q(pd)) })).json()) as {
+      data?: { viewer: { zones: { d: DayRow[]; p?: { count: number; dimensions: { clientRequestPath: string } }[] }[] } };
+      errors?: unknown[];
+    };
+    const z = r.data?.viewer.zones[0];
+    if (z && !r.errors?.length) return { days: z.d, paths: z.p ?? [], pathDays: pd };
+  }
+  return { days: [] as DayRow[], paths: [], pathDays: 0 };
+}
+
+integrations.get("/website/analytics", async (c) => {
+  const days = Math.min(Math.max(Number(c.req.query("days") ?? 30), 1), 365);
+  const zone = c.req.query("zone") ?? "all";
+  const h = cfHeaders();
+  if (!h) return c.json({ demo: true, error: "Cloudflare non configuré", zones: CF_ZONES });
+  const ids = await cfZones(h);
+  const names = zone === "all" ? Object.keys(ids) : Object.keys(ids).filter((n) => n === zone);
+  const results = await Promise.all(names.map(async (n) => ({ name: n, ...(await zoneAnalytics(h, ids[n]!, days)) })));
+  const byDate = new Map<string, { date: string; visitors: number; pageviews: number; requests: number }>();
+  const countries = new Map<string, number>();
+  const browsers = new Map<string, number>();
+  const paths = new Map<string, number>();
+  const perZone: { name: string; visitors: number; pageviews: number }[] = [];
+  for (const r of results) {
+    let zv = 0;
+    let zp = 0;
+    for (const d of r.days) {
+      const k = d.dimensions.date;
+      const cur = byDate.get(k) ?? { date: k, visitors: 0, pageviews: 0, requests: 0 };
+      cur.visitors += d.uniq.uniques;
+      cur.pageviews += d.sum.pageViews;
+      cur.requests += d.sum.requests;
+      byDate.set(k, cur);
+      zv += d.uniq.uniques;
+      zp += d.sum.pageViews;
+      for (const cm of d.sum.countryMap) countries.set(cm.clientCountryName, (countries.get(cm.clientCountryName) ?? 0) + cm.requests);
+      for (const b of d.sum.browserMap) browsers.set(b.uaBrowserFamily, (browsers.get(b.uaBrowserFamily) ?? 0) + b.pageViews);
+    }
+    for (const p of r.paths) {
+      const path = p.dimensions.clientRequestPath;
+      if (BOT_PATH.test(path)) continue;
+      const key = zone === "all" && results.length > 1 ? `${r.name}${path}` : path;
+      paths.set(key, (paths.get(key) ?? 0) + p.count);
+    }
+    perZone.push({ name: r.name, visitors: zv, pageviews: zp });
+  }
+  const series = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const total = (k: "visitors" | "pageviews" | "requests") => series.reduce((a, s) => a + s[k], 0);
+  const totalPv = [...browsers.values()].reduce((a, b) => a + b, 0) || 1;
+  const mobile = [...browsers.entries()].filter(([b]) => /mobile|ios|android|samsung/i.test(b)).reduce((a, [, v]) => a + v, 0);
+  const countryReq = [...countries.values()].reduce((a, b) => a + b, 0) || 1;
   return c.json({
-    demo: !env.cloudflareToken,
-    domain: "otopio.ca",
-    totals: { visitors: sum("visitors"), pageviews: sum("pageviews"), bounceRate: 0.46, avgDuration: 94 },
+    demo: false,
+    zones: Object.keys(ids),
+    zone,
+    totals: { visitors: total("visitors"), pageviews: total("pageviews"), requests: total("requests"), mobileShare: mobile / totalPv },
     series,
-    pages: [
-      { path: "/", views: Math.round(sum("pageviews") * 0.38) },
-      { path: "/expertises/intelligence-artificielle", views: Math.round(sum("pageviews") * 0.14) },
-      { path: "/realisations", views: Math.round(sum("pageviews") * 0.11) },
-      { path: "/blog/agents-ia-pme-par-ou-commencer", views: Math.round(sum("pageviews") * 0.09) },
-      { path: "/contact", views: Math.round(sum("pageviews") * 0.07) },
-      { path: "/expertises/technologies-quantiques", views: Math.round(sum("pageviews") * 0.05) },
-    ],
-    referrers: [
-      { source: "Google", visitors: Math.round(sum("visitors") * 0.44) },
-      { source: "Direct", visitors: Math.round(sum("visitors") * 0.27) },
-      { source: "LinkedIn", visitors: Math.round(sum("visitors") * 0.15) },
-      { source: "ChatGPT / Perplexity", visitors: Math.round(sum("visitors") * 0.08) },
-      { source: "Bing", visitors: Math.round(sum("visitors") * 0.04) },
-    ],
-    countries: [
-      { code: "CA", visitors: Math.round(sum("visitors") * 0.58) },
-      { code: "FR", visitors: Math.round(sum("visitors") * 0.29) },
-      { code: "US", visitors: Math.round(sum("visitors") * 0.07) },
-      { code: "BE", visitors: Math.round(sum("visitors") * 0.03) },
-    ],
-    devices: [
-      { device: "desktop", share: 0.61 },
-      { device: "mobile", share: 0.35 },
-      { device: "tablet", share: 0.04 },
-    ],
+    perZone,
+    pages: [...paths.entries()].map(([path, views]) => ({ path, views })).sort((a, b) => b.views - a.views).slice(0, 10),
+    pagesDays: Math.max(0, ...results.map((r) => r.pathDays)),
+    countries: [...countries.entries()].map(([code, n]) => ({ code, share: n / countryReq })).sort((a, b) => b.share - a.share).slice(0, 8),
+    browsers: [...browsers.entries()].map(([name, n]) => ({ name, share: n / totalPv })).sort((a, b) => b.share - a.share).slice(0, 6),
   });
 });
 
