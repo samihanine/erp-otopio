@@ -41,7 +41,7 @@ export function Sheet({ open, onOpenChange, children, className }: { open: boole
         <Dl.Overlay className="fixed inset-0 z-40 bg-black/10 animate-fade" />
         <Dl.Content
           aria-describedby={undefined}
-          className={cn("fixed inset-y-2 right-2 z-40 flex w-[min(96vw,720px)] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-pop outline-none animate-slide", className)}
+          className={cn("fixed inset-0 z-40 flex flex-col overflow-hidden bg-surface shadow-pop outline-none animate-slide md:inset-y-2 md:left-auto md:right-2 md:w-[min(96vw,720px)] md:rounded-2xl md:border md:border-border", className)}
         >
           <Dl.Title className="sr-only">Details</Dl.Title>
           {children}

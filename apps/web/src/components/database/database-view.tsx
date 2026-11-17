@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, Icon, Skeleton, TableTile } from "@/components/ui/misc";
 import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparator, DropdownTrigger } from "@/components/ui/dropdown";
 import { Sheet } from "@/components/ui/dialog";
+import { useIsMobile } from "@/lib/use-media";
 import { FieldsMenu, FilterMenu, LayoutMenu, SortMenu } from "./toolbar";
 import { TableView } from "./table-view";
 import { CalendarView, GalleryView, KanbanView, ListView } from "./board-views";
@@ -88,6 +89,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
     vm.create.mutate({ table, name, type, icon: VIEW_ICONS[type], config }, { onSuccess: (v) => onSearchChange({ view: v.id }) });
   };
 
+  const isMobile = useIsMobile();
   const rows = data?.rows ?? [];
   const refs = data?.refs ?? {};
   const common = { table, rows, refs, config, onUpdate, onOpen, onCreate };
@@ -95,11 +97,11 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 px-6 pb-3 pt-6">
+      <div className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-4 md:px-6 md:pt-6">
         <Dropdown>
           <DropdownTrigger className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 outline-none">
             <TableTile icon={def.icon} color={def.color} />
-            <h1 className="truncate text-[22px] font-semibold tracking-tight">{tr(def.label)}</h1>
+            <h1 className="truncate text-[19px] font-semibold tracking-tight md:text-[22px]">{tr(def.label)}</h1>
             <ChevronDown className="size-4 text-subtle transition group-hover:text-fg" />
           </DropdownTrigger>
           <DropdownContent className="max-h-[70vh] w-60 overflow-y-auto">
@@ -124,13 +126,13 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
         </span>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="primary" size="md" onClick={() => onCreate()}>
-            <Plus /> {t("new")}
+            <Plus /> <span className="max-sm:hidden">{t("new")}</span>
           </Button>
         </div>
       </div>
 
       {/* View tabs */}
-      <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-5">
+      <div className="no-scrollbar flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-3 md:px-5">
         <ViewTab active={!saved} icon={VIEW_ICONS[defaultType]} label={t("allRecords")} onClick={() => onSearchChange({})}>
           {!saved && (
             <Dropdown>
@@ -171,14 +173,14 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
       </div>
 
       {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1 px-5 py-2">
-        <div className="relative mr-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-1 px-3 py-2 md:px-5">
+        <div className="relative mr-1 max-sm:w-full max-sm:mb-1">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-subtle" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t("search")}
-            className="h-7 w-52 rounded-lg bg-surface-2 pl-7 pr-7 text-[13px] outline-none ring-1 ring-inset ring-border transition focus:w-64 focus:bg-surface focus:ring-accent/40"
+            className="h-8 w-full rounded-lg bg-surface-2 pl-7 pr-7 sm:h-7 sm:w-52 text-[13px] outline-none ring-1 ring-inset ring-border transition sm:focus:w-64 focus:bg-surface focus:ring-accent/40"
           />
           {search && (
             <button type="button" onClick={() => setSearch("")} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-subtle hover:text-fg">
@@ -218,7 +220,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
           </div>
         ) : !rows.length && type !== "table" && type !== "kanban" && type !== "calendar" && type !== "gantt" ? (
           <EmptyState icon={def.icon} title={t("noRecords")} action={<Button onClick={() => onCreate()}><Plus /> {t("new")}</Button>} />
-        ) : type === "table" ? (
+        ) : type === "table" && !isMobile ? (
           <TableView {...common} onConfigChange={setConfig} selected={selected} onSelect={setSelected} />
         ) : type === "kanban" ? (
           <KanbanView {...common} />
@@ -230,6 +232,8 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
           <div className="h-full overflow-auto">
             <GalleryView {...common} />
           </div>
+        ) : !rows.length ? (
+          <EmptyState icon={def.icon} title={t("noRecords")} action={<Button onClick={() => onCreate()}><Plus /> {t("new")}</Button>} />
         ) : (
           <div className="h-full overflow-auto">
             <ListView {...common} />

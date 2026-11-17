@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Briefcase, CalendarDays, Database, FileText, Globe, Home, Languages, LogOut, Moon, Search, Settings, Sun, Wallet } from "lucide-react";
+import * as Dl from "@radix-ui/react-dialog";
+import { Briefcase, CalendarDays, Database, FileText, Globe, Home, Languages, LogOut, Menu as MenuIcon, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings, Sun, Wallet, X } from "lucide-react";
+import { useMedia, usePref } from "@/lib/use-media";
 import { useI18n, type DictKey } from "@/lib/i18n";
 import { signOut, useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -49,17 +51,24 @@ function RailLink({ to, icon: I, label, active }: { to: string; icon: typeof Hom
 }
 
 /**
- * Single navigation rail + content. `title` is a breadcrumb segment (string or node);
- * `parent` an optional link shown before it (e.g. "Base de données / Tâches").
+ * Navigation rail + optional section sidebar + content.
+ *  - `title`: breadcrumb segment; `parent`: optional link before it.
+ *  - `sidebar`: section navigation (e.g. the list of tables). Collapsible on desktop,
+ *    and shown in the slide-over menu on mobile / tablet.
  */
-export function AppShell({ children, title, actions, parent }: { children: ReactNode; title?: ReactNode; actions?: ReactNode; parent?: { label: string; to: string } }) {
-  const { t, locale, setLocale } = useI18n();
+export function AppShell({ children, title, actions, parent, sidebar }: { children: ReactNode; title?: ReactNode; actions?: ReactNode; parent?: { label: string; to: string }; sidebar?: ReactNode }) {
+  const { t, locale, setLocale, tr } = useI18n();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { data: session } = useSession();
   const navigate = useNavigate();
   const [cmdOpen, setCmdOpen] = useState(false);
   const { dark, setDark } = useTheme();
   const section = SECTIONS.find((s) => s.match(path));
+  const [sidebarOpen, setSidebarOpen] = usePref("erp.sidebar", true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const wide = useMedia("(min-width: 1024px)");
+  // close the mobile menu after navigating
+  useEffect(() => setMenuOpen(false), [path]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -76,7 +85,7 @@ export function AppShell({ children, title, actions, parent }: { children: React
 
   return (
     <div className="flex h-full bg-surface">
-      <aside className="flex w-[84px] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2/50 px-2 py-4">
+      <aside className="hidden w-[84px] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2/50 px-2 py-4 md:flex">
         <Link to="/" className="mb-4 grid size-10 place-items-center rounded-xl bg-navy text-sky-brand transition hover:opacity-90" title="Otopio">
           <OtopioLogo className="size-6" />
         </Link>
@@ -120,20 +129,67 @@ export function AppShell({ children, title, actions, parent }: { children: React
         </div>
       </aside>
 
+      {/* Section sidebar (desktop, collapsible) */}
+      {sidebar && wide && sidebarOpen ? <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface-2/30">{sidebar}</aside> : null}
+
+      {/* Mobile / tablet slide-over: main navigation + section sidebar */}
+      <Dl.Root open={menuOpen} onOpenChange={setMenuOpen}>
+        <Dl.Portal>
+          <Dl.Overlay className="fixed inset-0 z-50 bg-black/30 animate-fade" />
+          <Dl.Content aria-describedby={undefined} className="fixed inset-y-0 left-0 z-50 flex w-[min(86vw,320px)] flex-col overflow-hidden border-r border-border bg-surface shadow-pop outline-none">
+            <Dl.Title className="sr-only">Menu</Dl.Title>
+            <div className="flex items-center gap-2 border-b border-border px-3 py-3">
+              <span className="grid size-8 place-items-center rounded-lg bg-navy text-sky-brand">
+                <OtopioLogo className="size-5" />
+              </span>
+              <span className="text-[14px] font-semibold">Otopio ERP</span>
+              <Dl.Close className="ml-auto rounded-md p-1.5 text-muted hover:bg-hover hover:text-fg">
+                <X className="size-4" />
+              </Dl.Close>
+            </div>
+            <nav className="grid grid-cols-4 gap-1 border-b border-border p-2 md:hidden">
+              {[...SECTIONS, { key: "settings", to: "/settings", icon: Settings, label: "settings" as DictKey, match: (p: string) => p.startsWith("/settings") }].map((s) => (
+                <RailLink key={s.key} to={s.to} icon={s.icon} label={t(s.label)} active={s.match(path)} />
+              ))}
+            </nav>
+            {sidebar ? <div className="flex min-h-0 flex-1 flex-col">{sidebar}</div> : null}
+          </Dl.Content>
+        </Dl.Portal>
+      </Dl.Root>
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-6">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:px-6">
+          {/* menu button: mobile always, tablet when a section sidebar exists */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            className={cn("grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg", sidebar ? "lg:hidden" : "md:hidden")}
+            aria-label="Menu"
+          >
+            <MenuIcon className="size-[18px]" />
+          </button>
+          {sidebar && wide ? (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="-ml-2 grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg"
+              title={sidebarOpen ? tr({ fr: "Masquer le panneau", en: "Hide panel" }) : tr({ fr: "Afficher le panneau", en: "Show panel" })}
+            >
+              {sidebarOpen ? <PanelLeftClose className="size-[18px]" /> : <PanelLeftOpen className="size-[18px]" />}
+            </button>
+          ) : null}
           <div className="flex min-w-0 items-center gap-1.5 text-[14px]">
             {parent ? (
               <>
-                <Link to={parent.to} className="truncate text-muted hover:text-fg">
+                <Link to={parent.to} className="truncate text-muted hover:text-fg max-sm:hidden">
                   {parent.label}
                 </Link>
-                <span className="text-subtle">/</span>
+                <span className="text-subtle max-sm:hidden">/</span>
               </>
             ) : null}
             <span className="truncate font-medium">{title ?? (section ? t(section.key === "db" ? "database" : section.label) : "")}</span>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {actions}
             <button
               type="button"

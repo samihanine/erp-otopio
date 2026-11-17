@@ -183,7 +183,7 @@ export function ListView({ table, rows, refs, config, onOpen, onCreate }: BasePr
   const def = TABLES[table];
   const cardFields = useCardFields(table, config, []);
   return (
-    <div className="mx-auto max-w-4xl p-4">
+    <div className="mx-auto max-w-4xl p-2 sm:p-4">
       <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
         {rows.map((r) => (
           <button key={r.id} type="button" onClick={() => onOpen(r.id)} className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-hover">

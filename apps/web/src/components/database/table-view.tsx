@@ -46,6 +46,16 @@ const DEFAULT_WIDTH: Partial<Record<FieldDef["type"], number>> = {
 
 type Cell = { row: number; col: number };
 
+/** Plain-text tooltip for a cell (shows the full value when it is truncated). */
+function cellTitle(f: FieldDef, r: Row, refs: Refs): string | undefined {
+  const v = r[f.key];
+  if (v == null || v === "") return undefined;
+  if (f.type === "relation") return refs[f.relation!]?.[String(v)]?.label;
+  if (f.type === "tags") return (v as string[]).join(", ");
+  if (["text", "longtext", "url", "email", "phone", "repo"].includes(f.type)) return String(v);
+  return undefined;
+}
+
 export function TableView({ table, rows, refs, config, onConfigChange, onUpdate, onOpen, onCreate, selected, onSelect }: Props) {
   const { tr, t, locale } = useI18n();
   const def = TABLES[table];
@@ -130,13 +140,13 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
       <div className="min-w-max text-[13px]">
         {/* Header */}
         <div className="sticky top-0 z-10 grid border-b border-border bg-surface/95 backdrop-blur" style={{ gridTemplateColumns: template }}>
-          <div className="flex h-9 items-center justify-center border-r border-border">
+          <div className="sticky left-0 z-20 flex h-10 items-center justify-center border-r border-border bg-surface">
             <Checkbox checked={allSelected} onCheckedChange={(c) => onSelect(c ? new Set(rows.map((r) => r.id)) : new Set())} />
           </div>
           {fields.map((f, ci) => {
             const sort = config.sorts.find((s) => s.field === f.key);
             return (
-              <div key={f.key} className={cn("group/h relative flex h-9 items-center border-r border-border", ci === 0 && "sticky left-0 z-10 bg-surface")}>
+              <div key={f.key} className={cn("group/h relative flex h-10 items-center border-r border-border", f.key === def.primary && "sticky left-[44px] z-20 bg-surface shadow-[2px_0_0_0_var(--border)]")}>
                 <Dropdown>
                   <DropdownTrigger className="flex h-full w-full min-w-0 items-center gap-1.5 px-2 text-left font-medium text-muted outline-none hover:bg-hover data-[state=open]:bg-hover">
                     <Icon name={fieldIcon(f)} className="size-3.5 shrink-0 text-subtle" />
@@ -172,7 +182,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
         {/* Rows */}
         {rows.map((r, ri) => (
           <div key={r.id} className={cn("group/r grid border-b border-border hover:bg-hover/60", selected.has(r.id) && "bg-accent/[.04]")} style={{ gridTemplateColumns: template }}>
-            <div className="flex h-9 items-center justify-center border-r border-border text-xs text-subtle">
+            <div className="sticky left-0 z-[3] flex h-10 items-center justify-center border-r border-border bg-surface text-xs text-subtle group-hover/r:bg-[color-mix(in_oklab,var(--hover)_60%,var(--surface))]">
               <span className={cn("group-hover/r:hidden", selected.has(r.id) && "hidden")}>{ri + 1}</span>
               <span className={cn("hidden group-hover/r:block", selected.has(r.id) && "block")}>
                 <Checkbox
@@ -193,12 +203,18 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
               const primary = f.key === def.primary;
               const close = () => setEditing(null);
               const cellCls = cn(
-                "relative flex h-9 min-w-0 items-center border-r border-border px-2",
+                "relative flex h-10 min-w-0 items-center border-r border-border px-2",
                 ["number", "currency"].includes(f.type) && "justify-end",
-                primary && "sticky left-0 z-[1] bg-surface group-hover/r:bg-[color-mix(in_oklab,var(--hover)_60%,var(--surface))] font-medium",
+                primary && "sticky left-[44px] z-[2] cursor-pointer bg-surface font-medium shadow-[2px_0_0_0_var(--border)] group-hover/r:bg-[color-mix(in_oklab,var(--hover)_60%,var(--surface))]",
                 isActive && "z-[2] ring-2 ring-inset ring-accent/60",
               );
               const onClick = () => {
+                if (primary && !isActive) {
+                  // a single click on the name opens the record (double-click to rename)
+                  setActive({ row: ri, col: ci });
+                  onOpen(r.id);
+                  return;
+                }
                 if (f.type === "checkbox" && editable) {
                   onUpdate(r.id, { [f.key]: !r[f.key] });
                   setActive({ row: ri, col: ci });
@@ -225,7 +241,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
               }
 
               const content = (
-                <div key={f.key} className={cellCls} onClick={onClick} onDoubleClick={() => editable && setEditing({ row: ri, col: ci })}>
+                <div key={f.key} className={cellCls} onClick={onClick} onDoubleClick={() => editable && setEditing({ row: ri, col: ci })} title={cellTitle(f, r, refs)}>
                   <div className="flex min-w-0 flex-1 items-center overflow-hidden">
                     <FieldDisplay field={f} row={r} refs={refs} table={table} />
                     {primary && !r[f.key] && <span className="text-subtle">{t("untitled")}</span>}
@@ -261,17 +277,21 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
           </div>
         ))}
 
+        {!rows.length && (
+          <div className="sticky left-0 max-w-[100vw] px-6 py-10 text-center text-[13px] text-subtle">{t("noRecords")}</div>
+        )}
+
         {/* New row */}
-        <button type="button" onClick={() => onCreate()} className="flex h-9 w-full items-center gap-2 border-b border-border px-3 text-left text-muted hover:bg-hover hover:text-fg">
+        <button type="button" onClick={() => onCreate()} className="sticky left-0 flex h-10 w-full max-w-[100vw] items-center gap-2 border-b border-border px-3 text-left text-muted hover:bg-hover hover:text-fg">
           <Plus className="size-4" /> {t("new")}
         </button>
 
         {/* Footer */}
-        <div className="sticky bottom-0 grid border-t border-border bg-surface/95 text-xs text-muted backdrop-blur" style={{ gridTemplateColumns: template }}>
-          <div className="h-8" />
+        <div className="sticky bottom-0 z-10 grid border-t border-border bg-surface text-xs text-muted" style={{ gridTemplateColumns: template }}>
+          <div className="sticky left-0 h-8 bg-surface" />
           {fields.map((f, ci) => (
-            <div key={f.key} className={cn("flex h-8 items-center truncate px-2 tabular-nums", ["number", "currency"].includes(f.type) && "justify-end", ci === 0 && "sticky left-0 bg-surface")}>
-              {ci === 0 ? (
+            <div key={f.key} className={cn("flex h-8 items-center truncate px-2 tabular-nums", ["number", "currency"].includes(f.type) && "justify-end", f.key === def.primary && "sticky left-[44px] bg-surface")}>
+              {f.key === def.primary ? (
                 <span>
                   <span className="font-medium text-fg">{rows.length}</span> {t("records")}
                 </span>
