@@ -80,7 +80,7 @@ export function FinancePage() {
         <div className="flex items-center gap-2">
           <Combobox
             size="md"
-            className="w-36"
+            className="w-44"
             value={year}
             onChange={(v) => setYear(v ?? "all")}
             options={["all", ...years].map((y) => ({ value: y, label: y === "all" ? tr({ fr: "Toutes les années", en: "All years" }) : y }))}
