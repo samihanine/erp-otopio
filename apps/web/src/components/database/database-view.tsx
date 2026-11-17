@@ -158,7 +158,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
         ))}
         <Dropdown>
           <DropdownTrigger asChild>
-            <button type="button" className="ml-1 flex h-9 items-center gap-1 rounded-md px-2 text-[13px] text-muted hover:text-fg">
+            <button type="button" className="ml-1 flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[13px] text-muted hover:text-fg">
               <Plus className="size-3.5" /> {t("addView")}
             </button>
           </DropdownTrigger>
@@ -273,7 +273,7 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
 function ViewTab({ active, icon, label, onClick, children }: { active: boolean; icon: string; label: string; onClick: () => void; children?: React.ReactNode }) {
   return (
     <div className={cn("relative flex h-9 shrink-0 items-center", active && "after:absolute after:inset-x-1.5 after:-bottom-px after:h-0.5 after:rounded-full after:bg-fg")}>
-      <button type="button" onClick={onClick} className={cn("flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium transition", active ? "text-fg" : "text-muted hover:bg-hover hover:text-fg")}>
+      <button type="button" onClick={onClick} className={cn("flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px] font-medium transition", active ? "text-fg" : "text-muted hover:bg-hover hover:text-fg")}>
         <Icon name={icon} className="size-3.5" />
         {label}
       </button>
