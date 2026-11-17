@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as Dl from "@radix-ui/react-dialog";
 import { Briefcase, CalendarDays, Database, FileText, Globe, Home, Languages, LogOut, Menu as MenuIcon, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings, Sun, Wallet, X } from "lucide-react";
-import { useMedia, usePref } from "@/lib/use-media";
+import { useMedia, usePref, useResizableWidth } from "@/lib/use-media";
+import { ResizeHandle } from "@/components/ui/resize-handle";
 import { useI18n, type DictKey } from "@/lib/i18n";
 import { signOut, useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -116,6 +117,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
   const [sidebarOpen, setSidebarOpen] = usePref("erp.sidebar", true);
   const [menuOpen, setMenuOpen] = useState(false);
   const wide = useMedia("(min-width: 1024px)");
+  const sideW = useResizableWidth("erp.sidebar.width", 240, 180, 440);
   // close the mobile menu after navigating
   useEffect(() => setMenuOpen(false), [path]);
 
@@ -182,7 +184,12 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
       </aside>
 
       {/* Section sidebar (desktop, collapsible) */}
-      {sidebar && wide && sidebarOpen ? <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface-2/30">{sidebar}</aside> : null}
+      {sidebar && wide && sidebarOpen ? (
+        <aside className="relative flex shrink-0 flex-col border-r border-border bg-surface-2/30" style={{ width: sideW.width }}>
+          {sidebar}
+          <ResizeHandle onPointerDown={sideW.onPointerDown} onReset={sideW.reset} />
+        </aside>
+      ) : null}
 
       {/* Mobile / tablet slide-over: main navigation + section sidebar */}
       <Dl.Root open={menuOpen} onOpenChange={setMenuOpen}>

@@ -29,7 +29,7 @@ finance.get("/summary", async (c) => {
   const conv = (amount: number, cur: string) => (entity ? amount : toCAD(amount, cur));
   const scoped = <T extends { legalEntityId: string }>(rows: T[]) => (entity ? rows.filter((r) => r.legalEntityId === entity.id) : rows);
 
-  const inv = scoped(invoices).filter((i) => i.status !== "cancelled");
+  const inv = scoped(invoices).filter((i) => i.status !== "cancelled" && i.status !== "lost"); // written-off invoices count nowhere
   const issued = inv.filter((i) => i.status !== "draft" && inYear(i.issueDate, year));
   const yearBills = scoped(bills).filter((b) => b.status !== "cancelled" && inYear(b.issueDate, year));
   // business figures only count professional spending; personal life spending is reported apart
@@ -85,7 +85,7 @@ finance.get("/summary", async (c) => {
   const byCategory = [...byCategoryMap.entries()].map(([category, amount]) => ({ category, amount: round2(amount) })).sort((a, b) => b.amount - a.amount);
 
   const byEntity = entities.map((e) => {
-    const ei = invoices.filter((i) => i.legalEntityId === e.id && i.status !== "draft" && i.status !== "cancelled" && inYear(i.issueDate, year));
+    const ei = invoices.filter((i) => i.legalEntityId === e.id && i.status !== "draft" && i.status !== "cancelled" && i.status !== "lost" && inYear(i.issueDate, year));
     const eb = bills.filter((b) => b.legalEntityId === e.id && b.status !== "cancelled" && b.scope !== "perso" && inYear(b.issueDate, year));
     return {
       id: e.id,

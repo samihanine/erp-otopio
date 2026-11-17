@@ -33,3 +33,45 @@ export function usePref(key: string, initial: boolean) {
   };
   return [v, set] as const;
 }
+
+/** Persisted panel width with min/max, plus pointer handlers for a drag handle. */
+export function useResizableWidth(key: string, initial: number, min = 180, max = 480) {
+  const [w, setW] = useState<number>(() => {
+    try {
+      const v = Number(localStorage.getItem(key));
+      return v >= min && v <= max ? v : initial;
+    } catch {
+      return initial;
+    }
+  });
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = w;
+    let last = startW;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: PointerEvent) => {
+      last = Math.max(min, Math.min(max, startW + ev.clientX - startX));
+      setW(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try {
+        localStorage.setItem(key, String(last));
+      } catch {}
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const reset = () => {
+    setW(initial);
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+  };
+  return { width: w, onPointerDown, reset };
+}

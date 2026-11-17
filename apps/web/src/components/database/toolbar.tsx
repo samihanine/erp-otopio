@@ -8,6 +8,7 @@ import { inputClass } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 import { useOptions, type ViewConfig } from "@/lib/data";
 import { cn, uid } from "@/lib/utils";
+import { Combobox } from "@/components/ui/combobox";
 import { Checkbox } from "@/components/ui/checkbox";
 
 type Props = { table: TableKey; config: ViewConfig; onChange: (c: ViewConfig) => void };
@@ -158,10 +159,7 @@ export function FilterMenu({ table, config, onChange }: Props) {
                   {i === 0 ? (
                     t("where")
                   ) : i === 1 ? (
-                    <select value={config.filterMode ?? "and"} onChange={(e) => onChange({ ...config, filterMode: e.target.value as "and" | "or" })} className="h-7 rounded-md bg-surface-2 px-1 text-xs ring-1 ring-inset ring-border">
-                      <option value="and">{t("and")}</option>
-                      <option value="or">{t("or")}</option>
-                    </select>
+                    <Combobox size="xs" value={config.filterMode ?? "and"} onChange={(v) => onChange({ ...config, filterMode: (v ?? "and") as "and" | "or" })} options={[{ value: "and", label: t("and") }, { value: "or", label: t("or") }]} />
                   ) : (
                     t(config.filterMode === "or" ? "or" : "and")
                   )}
@@ -170,17 +168,13 @@ export function FilterMenu({ table, config, onChange }: Props) {
                   <Icon name={fieldIcon(field)} className="size-3.5 shrink-0 text-muted" />
                   <span className="truncate">{tr(field.label)}</span>
                 </div>
-                <select
+                <Combobox
+                  size="xs"
+                  className="w-36 shrink-0"
                   value={f.op}
-                  onChange={(e) => set(filters.map((x) => (x.id === f.id ? { ...x, op: e.target.value } : x)))}
-                  className="h-7 w-36 shrink-0 rounded-lg border border-border bg-surface px-1.5 text-[13px] outline-none"
-                >
-                  {OPS_BY_TYPE[field.type].map((op) => (
-                    <option key={op} value={op}>
-                      {tr(OP_LABELS[op])}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => v && set(filters.map((x) => (x.id === f.id ? { ...x, op: v } : x)))}
+                  options={OPS_BY_TYPE[field.type].map((op) => ({ value: op, label: tr(OP_LABELS[op]) }))}
+                />
                 <FilterValue field={field} op={f.op as FilterOp} value={f.value} onChange={(v) => set(filters.map((x) => (x.id === f.id ? { ...x, value: v } : x)))} />
                 <Button variant="ghost" size="icon-sm" onClick={() => set(filters.filter((x) => x.id !== f.id))}>
                   <Trash2 />
@@ -333,12 +327,11 @@ export function LayoutMenu({ table, config, onChange, type }: Props & { type: Vi
   const urlFields = def.fields.filter((f) => f.type === "url");
   if (type === "table" || type === "list") return null;
   const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <label className="flex items-center justify-between gap-3 px-1.5 py-1 text-[13px]">
+    <div className="flex items-center justify-between gap-3 px-1.5 py-1 text-[13px]">
       <span className="text-muted">{label}</span>
       {children}
-    </label>
+    </div>
   );
-  const sel = "h-7 min-w-36 rounded-lg border border-border bg-surface px-1.5 text-[13px] outline-none";
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -349,48 +342,22 @@ export function LayoutMenu({ table, config, onChange, type }: Props & { type: Vi
       <PopoverContent className="w-72 p-2" align="end">
         {type === "kanban" && (
           <Row label={t("groupBy")}>
-            <select className={sel} value={config.groupBy ?? ""} onChange={(e) => onChange({ ...config, groupBy: e.target.value || null })}>
-              {selectFields.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {tr(f.label)}
-                </option>
-              ))}
-            </select>
+            <Combobox size="xs" className="w-40" value={config.groupBy ?? null} onChange={(v) => onChange({ ...config, groupBy: v })} options={selectFields.map((f) => ({ value: f.key, label: tr(f.label) }))} placeholder="—" />
           </Row>
         )}
         {(type === "calendar" || type === "gantt") && (
           <Row label={type === "gantt" ? t("startField") : t("dateField")}>
-            <select className={sel} value={config.dateField ?? ""} onChange={(e) => onChange({ ...config, dateField: e.target.value || null })}>
-              {dateFields.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {tr(f.label)}
-                </option>
-              ))}
-            </select>
+            <Combobox size="xs" className="w-40" value={config.dateField ?? null} onChange={(v) => onChange({ ...config, dateField: v })} options={dateFields.map((f) => ({ value: f.key, label: tr(f.label) }))} placeholder="—" />
           </Row>
         )}
         {type === "gantt" && (
           <Row label={t("endField")}>
-            <select className={sel} value={config.endDateField ?? ""} onChange={(e) => onChange({ ...config, endDateField: e.target.value || null })}>
-              <option value="">—</option>
-              {dateFields.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {tr(f.label)}
-                </option>
-              ))}
-            </select>
+            <Combobox size="xs" className="w-40" clearable value={config.endDateField ?? null} onChange={(v) => onChange({ ...config, endDateField: v })} options={dateFields.map((f) => ({ value: f.key, label: tr(f.label) }))} placeholder="—" />
           </Row>
         )}
         {type === "gallery" && (
           <Row label={tr({ fr: "Couverture", en: "Cover" })}>
-            <select className={sel} value={config.coverField ?? ""} onChange={(e) => onChange({ ...config, coverField: e.target.value || null })}>
-              <option value="">—</option>
-              {urlFields.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {tr(f.label)}
-                </option>
-              ))}
-            </select>
+            <Combobox size="xs" className="w-40" clearable value={config.coverField ?? null} onChange={(v) => onChange({ ...config, coverField: v })} options={urlFields.map((f) => ({ value: f.key, label: tr(f.label) }))} placeholder="—" />
           </Row>
         )}
       </PopoverContent>

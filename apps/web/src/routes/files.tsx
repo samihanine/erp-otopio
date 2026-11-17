@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronDown, ChevronRight, ExternalLink, FolderInput, HardDrive, LayoutGrid, List, Maximize2, MoreHorizontal, Pencil, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { Archive, FolderOpen, ChevronDown, ChevronRight, ExternalLink, FolderInput, HardDrive, LayoutGrid, List, Maximize2, MoreHorizontal, Pencil, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
 import { api, type Row } from "@/lib/api";
 import { fmtDate, useI18n } from "@/lib/i18n";
 import { useRecord, useUpdateRecord } from "@/lib/data";
-import { usePref } from "@/lib/use-media";
+import { usePref, useResizableWidth } from "@/lib/use-media";
+import { ResizeHandle } from "@/components/ui/resize-handle";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Segmented, Skeleton } from "@/components/ui/misc";
@@ -114,6 +115,7 @@ export function FilesPage() {
   const [renaming, setRenaming] = useState<Row | null>(null);
   const [moving, setMoving] = useState<Row | null>(null);
   const actions = useExplorerActions();
+  const treeW = useResizableWidth("erp.files.tree.width", 256, 180, 480);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q.trim()), 300);
@@ -132,10 +134,13 @@ export function FilesPage() {
     enabled: searching || Boolean(folder),
   });
   const items = useMemo(() => list.filter((d) => d.title !== "_Archives"), [list]);
-  const crumbs = useMemo(() => {
-    const parts = (folder?.path || folder?.name || "").split("/").filter(Boolean);
-    return parts;
-  }, [folder]);
+  const { data: crumbs = [] } = useQuery({
+    queryKey: ["drive", "ancestors", folder?.id],
+    queryFn: () => api<{ id: string; name: string; path: string | null }[]>(`/ws/drive/ancestors?id=${folder!.id}`),
+    enabled: Boolean(folder),
+    placeholderData: (p) => p,
+  });
+  const [ctx, setCtx] = useState<{ d: Row; x: number; y: number } | null>(null);
 
   const openItem = (d: Row) => {
     if (d.isFolder) {
@@ -150,14 +155,13 @@ export function FilesPage() {
     if (d) actions.move(d, target.id, target.name);
   };
 
-  const menu = (d: Row) => (
-    <Dropdown>
-      <DropdownTrigger asChild>
-        <button type="button" onClick={(e) => e.stopPropagation()} className="grid size-7 shrink-0 place-items-center rounded-md text-subtle opacity-0 hover:bg-hover hover:text-fg group-hover:opacity-100 data-[state=open]:opacity-100" aria-label="actions">
-          <MoreHorizontal className="size-4" />
-        </button>
-      </DropdownTrigger>
-      <DropdownContent align="end" onClick={(e) => e.stopPropagation()}>
+  const menuItems = (d: Row) => (
+    <>
+      {d.isFolder && (
+        <DropdownItem onSelect={() => openItem(d)}>
+          <FolderOpen /> {tr({ fr: "Ouvrir", en: "Open" })}
+        </DropdownItem>
+      )}
         {!d.isFolder && (
           <DropdownItem onSelect={() => setFull(d)}>
             <Maximize2 /> {tr({ fr: "Aperçu", en: "Preview" })}
@@ -187,11 +191,27 @@ export function FilesPage() {
         >
           <Trash2 /> {tr({ fr: "Supprimer", en: "Delete" })}
         </DropdownItem>
+    </>
+  );
+  const menu = (d: Row) => (
+    <Dropdown>
+      <DropdownTrigger asChild>
+        <button type="button" onClick={(e) => e.stopPropagation()} className="grid size-7 shrink-0 place-items-center rounded-md text-subtle opacity-0 hover:bg-hover hover:text-fg group-hover:opacity-100 data-[state=open]:opacity-100" aria-label="actions">
+          <MoreHorizontal className="size-4" />
+        </button>
+      </DropdownTrigger>
+      <DropdownContent align="end" onClick={(e) => e.stopPropagation()}>
+        {menuItems(d)}
       </DropdownContent>
     </Dropdown>
   );
 
   const dragProps = (d: Row) => ({
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault();
+      setSelected(d.isFolder ? selected : d);
+      setCtx({ d, x: e.clientX, y: e.clientY });
+    },
     draggable: true,
     onDragStart: (e: React.DragEvent) => {
       e.dataTransfer.setData(DRAG_TYPE, String(d.driveFileId));
@@ -222,11 +242,14 @@ export function FilesPage() {
         <DocsTabs active="files" />
         <div className="flex min-h-0 flex-1">
           {/* Tree */}
-          <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-border px-2 py-3 md:block">
+          <aside className="relative hidden shrink-0 border-r border-border md:block" style={{ width: treeW.width }}>
+            <ResizeHandle onPointerDown={treeW.onPointerDown} onReset={treeW.reset} />
+            <div className="h-full overflow-y-auto px-2 py-3">
             {roots.map((r) => (
               <TreeNode key={r.id} folder={{ ...r, path: r.name }} depth={0} defaultOpen selected={folder?.id ?? null} onSelect={(f) => openItem({ id: f.id, isFolder: true, driveFileId: f.id, title: f.name, path: f.path })} onDropItem={dropOnFolder} />
             ))}
             {!roots.length && <div className="px-2 text-xs text-subtle">{tr({ fr: "Synchronisation du Drive en cours…", en: "Drive sync in progress…" })}</div>}
+            </div>
           </aside>
 
           {/* Content */}
@@ -235,9 +258,24 @@ export function FilesPage() {
               {/* breadcrumb */}
               <div className="flex min-w-0 items-center gap-1 text-[13px] max-md:w-full">
                 {crumbs.map((c, i) => (
-                  <span key={i} className="flex min-w-0 items-center gap-1">
+                  <span key={c.id} className="flex min-w-0 items-center gap-1">
                     {i > 0 && <ChevronRight className="size-3.5 shrink-0 text-subtle" />}
-                    <span className={cn("truncate", i === crumbs.length - 1 ? "font-medium" : "text-muted")}>{c}</span>
+                    {i === crumbs.length - 1 ? (
+                      <span className="truncate px-1 font-medium">{c.name}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => openItem({ id: c.id, isFolder: true, driveFileId: c.id, title: c.name, path: c.path })}
+                        onDragOver={(e) => e.dataTransfer.types.includes(DRAG_TYPE) && e.preventDefault()}
+                        onDrop={(e) => {
+                          const id = e.dataTransfer.getData(DRAG_TYPE);
+                          if (id) dropOnFolder({ id: c.id, name: c.name }, id);
+                        }}
+                        className="truncate rounded px-1 text-muted hover:bg-hover hover:text-fg"
+                      >
+                        {c.name}
+                      </button>
+                    )}
                   </span>
                 ))}
               </div>
@@ -341,6 +379,14 @@ export function FilesPage() {
         </div>
       </div>
       {full && <PreviewOverlay doc={full} onClose={() => setFull(null)} />}
+      <Dropdown open={Boolean(ctx)} onOpenChange={(o) => !o && setCtx(null)}>
+        <DropdownTrigger asChild>
+          <span aria-hidden style={{ position: "fixed", left: ctx?.x ?? 0, top: ctx?.y ?? 0, width: 1, height: 1 }} />
+        </DropdownTrigger>
+        <DropdownContent align="start" className="min-w-52">
+          {ctx ? menuItems(ctx.d) : null}
+        </DropdownContent>
+      </Dropdown>
       <RenameDialog doc={renaming} onClose={() => setRenaming(null)} onSave={(d, n) => actions.rename(d, n)} />
       <MoveDialog doc={moving} roots={roots} onClose={() => setMoving(null)} onMove={(d, f) => actions.move(d, f.id, f.name)} />
     </AppShell>

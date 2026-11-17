@@ -26,7 +26,8 @@ type Analytics = {
   browsers: { name: string; share: number }[];
 };
 
-const FLAGS: Record<string, string> = { CA: "🇨🇦", FR: "🇫🇷", US: "🇺🇸", BE: "🇧🇪", CH: "🇨🇭" };
+/** Flag emoji for any ISO-3166 alpha-2 country code. */
+const flag = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(...[...code].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "🏳️");
 
 export function WebsitePage() {
   const { tr, t, locale } = useI18n();
@@ -163,7 +164,7 @@ export function WebsitePage() {
               </Panel>
             )}
             <Panel title={tr({ fr: "Pays", en: "Countries" })}>
-              {data?.countries?.map((c) => <BarRow key={c.code} label={`${FLAGS[c.code] ?? ""} ${c.code}`} value={Math.round(c.share * 1000) / 10} max={Math.round((data.countries[0]?.share ?? 1) * 1000) / 10 || 1} color="#14b8a6" fmt={(v) => `${v} %`} />)}
+              {data?.countries?.map((c) => <BarRow key={c.code} label={`${flag(c.code)} ${c.code}`} value={Math.round(c.share * 1000) / 10} max={Math.round((data.countries[0]?.share ?? 1) * 1000) / 10 || 1} color="#14b8a6" fmt={(v) => `${v} %`} />)}
             </Panel>
           </div>
 

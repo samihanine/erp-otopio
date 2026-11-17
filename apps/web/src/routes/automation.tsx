@@ -1,4 +1,4 @@
-import { Fragment, useEffect, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, Undo2 } from "lucide-react";
@@ -6,10 +6,12 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { fmtRelative, useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /** Minimal markdown: **bold**, bullet lines and paragraphs. */
-export function Md({ text }: { text: string }) {
+export function Md({ text, inline: asInline }: { text: string; inline?: boolean }) {
   const inline = (s: string): ReactNode[] => s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => (p.startsWith("**") ? <strong key={i} className="font-semibold text-fg">{p.slice(2, -2)}</strong> : <Fragment key={i}>{p}</Fragment>));
+  if (asInline) return <>{inline(text)}</>;
   return (
     <div className="space-y-1.5 text-[13px] leading-relaxed text-muted">
       {text
@@ -35,15 +37,48 @@ export function Md({ text }: { text: string }) {
 export function DigestCard() {
   const { tr, locale } = useI18n();
   const { data } = useQuery({ queryKey: ["ws", "digest"], queryFn: () => api<{ digest: string; at: string } | null>("/ws/digest"), staleTime: 300_000 });
+  const [open, setOpen] = useState(false);
   if (!data?.digest) return null;
+  // split "**Section**" blocks into columns
+  const sections: { title: string; items: string[] }[] = [];
+  for (const raw of data.digest.split("\n")) {
+    const l = raw.trim();
+    if (!l) continue;
+    const h = l.match(/^(?:#+\s*)?\*\*(.+?)\*\*:?$/) ?? l.match(/^#+\s+(.*)/);
+    if (h) sections.push({ title: h[1]!, items: [] });
+    else {
+      if (!sections.length) sections.push({ title: "", items: [] });
+      sections.at(-1)!.items.push(l.replace(/^[-*•]\s+/, ""));
+    }
+  }
+  const max = open ? 99 : 2;
+  const hidden = sections.reduce((a, s) => a + Math.max(0, s.items.length - max), 0);
   return (
-    <section className="mt-8 rounded-xl border border-border p-5">
-      <div className="mb-3 flex items-center gap-2">
-        <Sparkles className="size-4 text-violet-500" />
-        <h2 className="text-[14px] font-semibold">{tr({ fr: "Point de la semaine", en: "Weekly brief" })}</h2>
-        <span className="ml-auto text-xs text-subtle">{fmtRelative(data.at, locale)}</span>
+    <section className="mt-6 rounded-xl bg-surface-2/50 px-4 py-3">
+      <div className="mb-2 flex items-center gap-2">
+        <Sparkles className="size-3.5 text-violet-500" />
+        <h2 className="text-[12px] font-medium uppercase tracking-wider text-muted">{tr({ fr: "Point de la semaine", en: "Weekly brief" })}</h2>
+        <span className="text-[11px] text-subtle">· {fmtRelative(data.at, locale)}</span>
+        {(hidden > 0 || open) && (
+          <button type="button" onClick={() => setOpen(!open)} className="ml-auto text-[11.5px] text-muted hover:text-fg">
+            {open ? tr({ fr: "Réduire", en: "Collapse" }) : `${tr({ fr: "Voir tout", en: "Show all" })} (+${hidden})`}
+          </button>
+        )}
       </div>
-      <Md text={data.digest} />
+      <div className="grid gap-x-6 gap-y-2 md:grid-cols-3">
+        {sections.map((s, i) => (
+          <div key={i} className="min-w-0">
+            {s.title && <div className="mb-0.5 text-[12px] font-semibold">{s.title}</div>}
+            <ul className="space-y-0.5 text-[12.5px] leading-snug text-muted">
+              {s.items.slice(0, max).map((it, j) => (
+                <li key={j} className={cn(!open && "line-clamp-1")}>
+                  <Md text={it} inline />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

@@ -10,6 +10,7 @@ import { qk } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
 
 export async function uploadPublicImage(file: File, table: string, recordId?: string) {
   const fd = new FormData();
@@ -94,11 +95,7 @@ function SubEditor({ value, onChange, table, recordId, withType }: { value: Sect
     <div className="grid gap-1.5">
       <div className="flex gap-1.5">
         {withType && (
-          <select value={(value as Section).type} onChange={(e) => set("type", e.target.value)} className={cn(inputClass, "h-8 w-36")}>
-            {LAYOUTS.map((l) => (
-              <option key={l}>{l}</option>
-            ))}
-          </select>
+          <Combobox className="w-36 shrink-0" value={(value as Section).type} onChange={(v) => v && set("type", v)} options={LAYOUTS.map((l) => ({ value: l, label: l }))} />
         )}
         <input value={value.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder={tr({ fr: "Titre", en: "Title" })} className={cn(inputClass, "h-8 flex-1")} />
         <input value={value.lucideIcon ?? ""} onChange={(e) => set("lucideIcon", e.target.value)} placeholder="Icône" className={cn(inputClass, "h-8 w-28")} />
@@ -216,13 +213,7 @@ export function TranslationsPanel({ table, row, onSave }: { table: TableKey; row
         <span className="text-xs text-subtle">
           FR → {LANGS.find((l) => l.code === lang)?.label} · {filled}/{fields.length}
         </span>
-        <select value={lang} onChange={(e) => setLang(e.target.value)} className="ml-auto h-7 rounded-md border border-border bg-surface px-2 text-xs">
-          {LANGS.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.label}
-            </option>
-          ))}
-        </select>
+        <Combobox size="xs" className="ml-auto w-28" value={lang} onChange={(v) => v && setLang(v)} options={LANGS.map((l) => ({ value: l.code, label: l.label }))} />
         <Button size="sm" variant="secondary" onClick={auto} disabled={busy}>
           <Sparkles /> {busy ? "…" : tr({ fr: "Traduire avec l'IA", en: "Translate with AI" })}
         </Button>

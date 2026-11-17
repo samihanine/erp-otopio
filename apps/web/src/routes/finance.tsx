@@ -10,6 +10,7 @@ import { fmtDate, useI18n } from "@/lib/i18n";
 import { HEX } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Skeleton, StatusDot } from "@/components/ui/misc";
 
 export type FinanceSummary = {
@@ -63,14 +64,7 @@ export function FinancePage() {
       title={t("finance")}
       actions={
         <div className="flex items-center gap-2">
-          <select value={entity} onChange={(e) => setEntity(e.target.value)} className="h-9 rounded-xl border border-border bg-surface px-3 text-[13px] outline-none">
-            <option value="all">{t("allEntities")}</option>
-            {data?.byEntity.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name} ({e.country})
-              </option>
-            ))}
-          </select>
+          <Combobox size="md" className="w-60" value={entity} onChange={(v) => setEntity(v ?? "all")} options={[{ value: "all", label: t("allEntities") }, ...(data?.byEntity ?? []).map((e) => ({ value: e.id, label: `${e.name} (${e.country})` }))]} />
         </div>
       }
     >

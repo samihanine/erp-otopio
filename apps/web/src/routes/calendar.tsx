@@ -10,6 +10,7 @@ import { useCreateRecord, useList, useOptions } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { OptionBadge, Segmented } from "@/components/ui/misc";
+import { Combobox } from "@/components/ui/combobox";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input, inputClass } from "@/components/ui/input";
 
@@ -33,11 +34,11 @@ const HOUR_PX = 48;
 export function CalendarPage() {
   const { tr, locale } = useI18n();
   const navigate = useNavigate();
-  const [view, setView] = useState<"week" | "month" | "list">("week");
+  const [view, setView] = useState<"week" | "month" | "list">("month");
   const [kinds, setKinds] = useState<string[]>([]);
   const [cursor, setCursor] = useState(() => new Date());
   const [members, setMembers] = useState<string[]>(MEMBERS.map((m) => m.email));
-  const [client, setClient] = useState<string>("");
+  const [client, setClient] = useState<string[]>([]);
   const [creating, setCreating] = useState<Date | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -57,7 +58,7 @@ export function CalendarPage() {
     filters: [
       { field: "startAt", op: "after", value: range.start.toISOString() },
       { field: "startAt", op: "before", value: range.end.toISOString() },
-      ...(client ? [{ field: "organizationId", op: "in", value: [client] }] : []),
+      ...(client.length ? [{ field: "organizationId", op: "in", value: client }] : []),
     ],
     sorts: [{ field: "startAt", dir: "asc" }],
     limit: 2000,
@@ -126,14 +127,7 @@ export function CalendarPage() {
                 </button>
               );
             })}
-            <select value={client} onChange={(e) => setClient(e.target.value)} className="h-7 rounded-lg border border-border bg-surface px-2 text-xs outline-none">
-              <option value="">{tr({ fr: "Tous les clients", en: "All clients" })}</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+            <Combobox multiple size="xs" className="w-52" placeholder={tr({ fr: "Tous les clients", en: "All clients" })} value={client} onChange={setClient} options={clients.map((c) => ({ value: c.id, label: c.label }))} />
           </div>
         </div>
 
@@ -276,32 +270,12 @@ function NewEvent({ at, onClose }: { at: Date | null; onClose: () => void }) {
           <Input autoFocus placeholder={tr({ fr: "Titre", en: "Title" })} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <div className="flex gap-2">
             <input type="datetime-local" value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} className={cn(inputClass, "flex-1")} />
-            <select value={form.minutes} onChange={(e) => setForm({ ...form, minutes: Number(e.target.value) })} className={cn(inputClass, "w-28")}>
-              {[15, 30, 45, 60, 90, 120].map((m) => (
-                <option key={m} value={m}>
-                  {m} min
-                </option>
-              ))}
-            </select>
+            <Combobox size="md" className="w-28" value={String(form.minutes)} onChange={(v) => v && setForm({ ...form, minutes: Number(v) })} options={[15, 30, 45, 60, 90, 120].map((m) => ({ value: String(m), label: `${m} min` }))} />
           </div>
           <Input placeholder={tr({ fr: "Participants (courriels, séparés par des virgules)", en: "Attendees (emails)" })} value={form.attendees} onChange={(e) => setForm({ ...form, attendees: e.target.value })} />
           <div className="flex gap-2">
-            <select value={form.org} onChange={(e) => setForm({ ...form, org: e.target.value })} className={cn(inputClass, "flex-1")}>
-              <option value="">{tr({ fr: "Client (optionnel)", en: "Client (optional)" })}</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            <select value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} className={cn(inputClass, "w-40")}>
-              <option value="">{tr({ fr: "Mon agenda", en: "My calendar" })}</option>
-              {MEMBERS.map((m) => (
-                <option key={m.email} value={m.email}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+            <Combobox size="md" clearable className="flex-1" placeholder={tr({ fr: "Client (optionnel)", en: "Client (optional)" })} value={form.org || null} onChange={(v) => setForm({ ...form, org: v ?? "" })} options={clients.map((c) => ({ value: c.id, label: c.label }))} />
+            <Combobox size="md" clearable className="w-40" placeholder={tr({ fr: "Mon agenda", en: "My calendar" })} value={form.owner || null} onChange={(v) => setForm({ ...form, owner: v ?? "" })} options={MEMBERS.map((m) => ({ value: m.email, label: m.name }))} />
           </div>
           <textarea placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className={cn(inputClass, "h-auto py-2")} />
           <textarea placeholder={tr({ fr: "Note interne (non partagée dans Google Agenda)", en: "Internal note (not shared to Google Calendar)" })} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className={cn(inputClass, "h-auto py-2")} />

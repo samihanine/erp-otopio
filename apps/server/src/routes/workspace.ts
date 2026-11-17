@@ -21,7 +21,7 @@ workspace.get("/clients", async (c) => {
   ]);
   return c.json(
     orgs.map((o) => {
-      const inv = invoices.filter((i) => i.organizationId === o.id && i.status !== "cancelled" && i.status !== "draft");
+      const inv = invoices.filter((i) => i.organizationId === o.id && i.status !== "cancelled" && i.status !== "draft" && i.status !== "lost");
       return {
         ...o,
         revenueCAD: round2(inv.reduce((a, i) => a + toCAD(i.subtotal, i.currency), 0)),
@@ -51,7 +51,7 @@ workspace.get("/clients/:id", async (c) => {
   ]);
   const projectIds = projects.map((p) => p.id);
   const tasks = projectIds.length ? await db.select().from(schema.task).where(inArray(schema.task.projectId, projectIds)) : [];
-  const live = invoices.filter((i) => i.status !== "cancelled" && i.status !== "draft");
+  const live = invoices.filter((i) => i.status !== "cancelled" && i.status !== "draft" && i.status !== "lost");
   const cur = org.defaultEntityId ? (await db.select({ c: schema.legalEntity.currency }).from(schema.legalEntity).where(eq(schema.legalEntity.id, org.defaultEntityId)))[0]?.c ?? "CAD" : "CAD";
   const conv = (a: number, from: string) => (from === cur ? a : cur === "CAD" ? toCAD(a, from) : a);
   const now = Date.now();
@@ -116,6 +116,24 @@ workspace.get("/drive/children", async (c) => {
   if (!parent) return c.json({ error: "parent required" }, 400);
   const rows = await db.select().from(schema.document).where(eq(schema.document.parentId, parent)).orderBy(desc(schema.document.isFolder), asc(schema.document.title));
   return c.json(rows);
+});
+
+/** Breadcrumb: chain of folders from the shared drive root to `id`. */
+workspace.get("/drive/ancestors", async (c) => {
+  let id = c.req.query("id") ?? "";
+  const chain: { id: string; name: string; path: string | null }[] = [];
+  for (let i = 0; i < 30 && id; i++) {
+    const [d] = await db.select().from(schema.document).where(eq(schema.document.driveFileId, id));
+    if (!d) {
+      // shared drive root (not indexed as a document)
+      const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(eq(schema.document.driveId, id)).limit(1);
+      if (any?.path) chain.unshift({ id, name: any.path.split("/")[0]!, path: any.path.split("/")[0]! });
+      break;
+    }
+    chain.unshift({ id, name: d.title, path: d.path });
+    id = d.parentId ?? "";
+  }
+  return c.json(chain);
 });
 
 workspace.get("/drive/search", async (c) => {
