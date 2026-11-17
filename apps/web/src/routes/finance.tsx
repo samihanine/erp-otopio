@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CalendarRange, AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CheckCircle2, CircleDollarSign, FileWarning, Landmark, Link2Off, Plug, Receipt, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CheckCircle2, CircleDollarSign, FileWarning, Landmark, Link2Off, Plug, Receipt, Wallet } from "lucide-react";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { formatMoney, TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
@@ -78,6 +78,22 @@ export function FinancePage() {
       title={t("finance")}
       actions={
         <div className="flex items-center gap-2">
+          <Combobox
+            size="md"
+            className="w-36"
+            value={year}
+            onChange={(v) => setYear(v ?? "all")}
+            options={["all", ...years].map((y) => ({ value: y, label: y === "all" ? tr({ fr: "Toutes les années", en: "All years" }) : y }))}
+          />
+          <Combobox
+            multiple
+            size="md"
+            className="w-44"
+            placeholder={tr({ fr: "Tous les mois", en: "All months" })}
+            value={months.map(String)}
+            onChange={(v) => setMonths(v.map(Number).sort((a, b) => a - b))}
+            options={MONTHS.map((m, i) => ({ value: String(i + 1), label: m.charAt(0).toUpperCase() + m.slice(1) }))}
+          />
           <Segmented value={currency} onChange={pickCurrency} options={["CAD", "EUR", "USD"].map((c) => ({ value: c, label: c }))} />
           <Combobox size="md" className="w-60" value={entity} onChange={(v) => setEntity(v ?? "all")} options={[{ value: "all", label: t("allEntities") }, ...(data?.byEntity ?? []).map((e) => ({ value: e.id, label: `${e.name} (${e.country})` }))]} />
         </div>
@@ -90,15 +106,6 @@ export function FinancePage() {
               <h1 className="text-[28px] font-semibold tracking-tight">
                 {t("finance")} <span className="font-serif text-[26px] font-normal italic text-muted">{periodLabel}</span>
               </h1>
-              <p className="text-[13px] text-muted">
-                {tr({ fr: `Montants en ${cur}`, en: `Amounts in ${cur}` })}
-                {data?.fx
-                  ? ` · ${Object.entries(data.fx.rates)
-                      .filter(([k]) => k !== cur)
-                      .map(([k, v]) => `1 ${k} = ${v.toLocaleString(locale === "fr" ? "fr-CA" : "en-CA", { maximumFractionDigits: 4 })} ${cur}`)
-                      .join(" · ")} (${data.fx.source === "BCE" ? tr({ fr: `taux BCE du ${data.fx.date}`, en: `ECB rates ${data.fx.date}` }) : tr({ fr: "taux indicatifs", en: "indicative rates" })})`
-                  : ""}
-              </p>
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={() => navigate({ to: "/db/$table", params: { table: "invoice" } })}>
@@ -110,42 +117,6 @@ export function FinancePage() {
               <Button size="sm" onClick={() => navigate({ to: "/db/$table", params: { table: "transaction" } })}>
                 <Banknote /> {tr(TABLES.transaction.label)}
               </Button>
-            </div>
-          </div>
-
-          {/* Period filter (drives the whole dashboard) */}
-          <div className="sticky top-0 z-10 -mx-2 mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-surface/95 px-3 py-2.5 shadow-card backdrop-blur">
-            <CalendarRange className="size-4 text-subtle" />
-            <div className="flex flex-wrap gap-1">
-              {["all", ...years].map((y) => (
-                <button
-                  key={y}
-                  type="button"
-                  onClick={() => setYear(y)}
-                  className={cn("h-7 rounded-lg px-2.5 text-[13px] font-medium transition", year === y ? "bg-fg text-surface" : "text-muted hover:bg-hover hover:text-fg")}
-                >
-                  {y === "all" ? tr({ fr: "Toutes", en: "All" }) : y}
-                </button>
-              ))}
-            </div>
-            <span className="mx-1 h-5 w-px bg-border max-sm:hidden" />
-            <div className="flex flex-wrap gap-1">
-              <button type="button" onClick={() => setMonths([])} className={cn("h-7 rounded-lg px-2 text-[12.5px] transition", !months.length ? "bg-accent/10 font-medium text-accent" : "text-muted hover:bg-hover")}>
-                {tr({ fr: "Tous les mois", en: "All months" })}
-              </button>
-              {MONTHS.map((m, i) => {
-                const on = months.includes(i + 1);
-                return (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMonths(on ? months.filter((x) => x !== i + 1) : [...months, i + 1].sort((a, b) => a - b))}
-                    className={cn("h-7 min-w-9 rounded-lg px-1.5 text-[12.5px] capitalize transition", on ? "bg-accent/10 font-medium text-accent ring-1 ring-inset ring-accent/30" : "text-muted hover:bg-hover")}
-                  >
-                    {m}
-                  </button>
-                );
-              })}
             </div>
           </div>
 
