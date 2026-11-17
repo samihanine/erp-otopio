@@ -1,12 +1,27 @@
 import { Hono } from "hono";
 import { db, schema } from "@erp/db";
-import { round2, toCAD } from "@erp/shared";
+import { FX_TO_CAD, round2, toCAD } from "@erp/shared";
 import type { AppEnv } from "../lib/types";
 import { env } from "../lib/env";
 
 export const finance = new Hono<AppEnv>();
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/* Daily exchange rates (ECB via frankfurter.app), cached 12 h, fixed fallback. */
+let fxCache: { at: number; date: string; source: string; toCAD: Record<string, number> } | null = null;
+async function fxRates() {
+  if (fxCache && Date.now() - fxCache.at < 12 * 3600e3) return fxCache;
+  try {
+    const r = (await (await fetch("https://api.frankfurter.dev/v1/latest?from=CAD&to=EUR,USD", { signal: AbortSignal.timeout(4000) })).json()) as { date: string; rates: Record<string, number> };
+    const toCAD: Record<string, number> = { CAD: 1 };
+    for (const [k, v] of Object.entries(r.rates)) toCAD[k] = 1 / v;
+    fxCache = { at: Date.now(), date: r.date, source: "BCE", toCAD };
+  } catch {
+    fxCache = { at: Date.now() - 11 * 3600e3, date: "", source: "fixe", toCAD: { ...FX_TO_CAD } };
+  }
+  return fxCache;
+}
 
 finance.get("/summary", async (c) => {
   const yq = c.req.query("year") ?? String(new Date().getFullYear());
@@ -25,8 +40,11 @@ finance.get("/summary", async (c) => {
   ]);
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
   const entity = entities.find((e) => e.id === entityParam);
-  const currency = entity?.currency ?? "CAD";
-  const conv = (amount: number, cur: string) => (entity ? amount : toCAD(amount, cur));
+  const fx = await fxRates();
+  const wanted = (c.req.query("currency") ?? "").toUpperCase();
+  const currency = fx.toCAD[wanted] ? wanted : (entity?.currency ?? "CAD");
+  /** convert any amount to the reporting currency */
+  const conv = (amount: number, cur: string) => (cur === currency ? amount : round2((amount * (fx.toCAD[cur] ?? FX_TO_CAD[cur] ?? 1)) / (fx.toCAD[currency] ?? 1)));
   const scoped = <T extends { legalEntityId: string }>(rows: T[]) => (entity ? rows.filter((r) => r.legalEntityId === entity.id) : rows);
 
   const inv = scoped(invoices).filter((i) => i.status !== "cancelled" && i.status !== "lost"); // written-off invoices count nowhere
@@ -166,6 +184,7 @@ finance.get("/summary", async (c) => {
     years: allYears,
     currency,
     consolidated: !entity,
+    fx: { date: fx.date, source: fx.source, rates: Object.fromEntries(Object.entries(fx.toCAD).map(([k, v]) => [k, round2((v / (fx.toCAD[currency] ?? 1)) * 10000) / 10000])) },
     kpis: { invoicedHT, invoicedTTC, collected, outstanding, overdue, expenses, margin: round2(invoicedHT - expenses), openCount: open.length },
     monthly,
     byClient,

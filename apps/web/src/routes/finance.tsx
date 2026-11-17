@@ -11,13 +11,14 @@ import { HEX } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
-import { Skeleton, StatusDot } from "@/components/ui/misc";
+import { Segmented, Skeleton, StatusDot } from "@/components/ui/misc";
 
 export type FinanceSummary = {
   year: number | "all";
   years?: string[];
   currency: string;
   consolidated: boolean;
+  fx?: { date: string; source: string; rates: Record<string, number> };
   kpis: { invoicedHT: number; invoicedTTC: number; collected: number; outstanding: number; overdue: number; expenses: number; margin: number; openCount: number };
   monthly: { month: string; revenue: number; expenses: number; collected: number }[];
   byClient: { id: string; name: string; amount: number }[];
@@ -42,9 +43,22 @@ export function FinancePage() {
   const [year, setYear] = useState<string>("all");
   const [months, setMonths] = useState<number[]>([]);
   const [entity, setEntity] = useState("all");
+  const [currency, setCurrency] = useState<string>(() => {
+    try {
+      return localStorage.getItem("erp.finance.currency") ?? "CAD";
+    } catch {
+      return "CAD";
+    }
+  });
+  const pickCurrency = (c: string) => {
+    setCurrency(c);
+    try {
+      localStorage.setItem("erp.finance.currency", c);
+    } catch {}
+  };
   const { data, isLoading } = useQuery({
-    queryKey: ["finance", "summary", year, months.join(","), entity],
-    queryFn: () => api<FinanceSummary>(`/finance/summary?year=${year}&months=${months.join(",")}&entity=${entity}`),
+    queryKey: ["finance", "summary", year, months.join(","), entity, currency],
+    queryFn: () => api<FinanceSummary>(`/finance/summary?year=${year}&months=${months.join(",")}&entity=${entity}&currency=${currency}`),
     placeholderData: (prev) => prev,
   });
   const years = [...new Set([...(data?.years ?? []), String(new Date().getFullYear())])].sort().reverse();
@@ -64,6 +78,7 @@ export function FinancePage() {
       title={t("finance")}
       actions={
         <div className="flex items-center gap-2">
+          <Segmented value={currency} onChange={pickCurrency} options={["CAD", "EUR", "USD"].map((c) => ({ value: c, label: c }))} />
           <Combobox size="md" className="w-60" value={entity} onChange={(v) => setEntity(v ?? "all")} options={[{ value: "all", label: t("allEntities") }, ...(data?.byEntity ?? []).map((e) => ({ value: e.id, label: `${e.name} (${e.country})` }))]} />
         </div>
       }
@@ -76,7 +91,13 @@ export function FinancePage() {
                 {t("finance")} <span className="font-serif text-[26px] font-normal italic text-muted">{periodLabel}</span>
               </h1>
               <p className="text-[13px] text-muted">
-                {data?.consolidated ? `${t("consolidated")} · EUR × 1,52` : tr({ fr: "Montants dans la devise de la structure", en: "Amounts in entity currency" })}
+                {tr({ fr: `Montants en ${cur}`, en: `Amounts in ${cur}` })}
+                {data?.fx
+                  ? ` · ${Object.entries(data.fx.rates)
+                      .filter(([k]) => k !== cur)
+                      .map(([k, v]) => `1 ${k} = ${v.toLocaleString(locale === "fr" ? "fr-CA" : "en-CA", { maximumFractionDigits: 4 })} ${cur}`)
+                      .join(" · ")} (${data.fx.source === "BCE" ? tr({ fr: `taux BCE du ${data.fx.date}`, en: `ECB rates ${data.fx.date}` }) : tr({ fr: "taux indicatifs", en: "indicative rates" })})`
+                  : ""}
               </p>
             </div>
             <div className="flex gap-2">
