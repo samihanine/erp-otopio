@@ -366,7 +366,7 @@ function EventList({ events, kinds, setKinds, onOpen }: { events: (Row & { owner
                   return (
                     <button key={e.id} type="button" onClick={() => onOpen(e)} className="flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left text-[13px] last:border-0 hover:bg-hover">
                       <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: colorOf(e.owners[0]!) }} />
-                      <span className="w-24 shrink-0 tabular-nums text-muted">{e.allDay ? tr({ fr: "Journée", en: "All day" }) : `${time(e.startAt)} – ${time(e.endAt)}`}</span>
+                      <span className="w-32 shrink-0 whitespace-nowrap tabular-nums text-muted">{e.allDay ? tr({ fr: "Journée", en: "All day" }) : `${time(e.startAt)} – ${time(e.endAt)}`}</span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5 font-medium">
                           {e.isPrivate ? <Lock className="size-3 text-subtle" /> : e.meetUrl ? <Video className="size-3 text-subtle" /> : null}

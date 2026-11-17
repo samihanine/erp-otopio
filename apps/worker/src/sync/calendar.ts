@@ -64,6 +64,8 @@ export async function syncCalendars() {
         continue;
       }
       const start = e.start.dateTime ?? (e.start.date ? `${e.start.date}T00:00:00Z` : null);
+      // occurrences of endless series are only kept one year ahead
+      if (start && new Date(start).getTime() > Date.now() + 366 * 864e5) continue;
       const end = e.end.dateTime ?? (e.end.date ? `${e.end.date}T00:00:00Z` : start);
       if (!start) continue;
       const priv = e.visibility === "private" || e.visibility === "confidential";
@@ -108,6 +110,7 @@ export async function syncCalendars() {
     if (res.nextSyncToken) await setState(key, res.nextSyncToken);
     stats[owner] = n;
   }
+  await db.delete(schema.event).where(sql`${schema.event.startAt} > now() + interval '366 days'`);
   stats.meetings = await meetingsToCommunications();
   return stats;
 }
