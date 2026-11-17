@@ -458,6 +458,10 @@ export const bill = pgTable(
     total: money("total").notNull().default(0),
     paymentMethod: text("payment_method"),
     cardId: uuid("card_id").references(() => creditCard.id, { onDelete: "set null" }),
+    /** who bears the cost: the billing entity, a client (re-billed / paid with the client's card) or someone else */
+    paidBy: text("paid_by").notNull().default("entity"),
+    /** client the expense relates to (e.g. hosting of a client's app) */
+    clientId: uuid("client_id").references(() => organization.id, { onDelete: "set null" }),
     scope: expenseScope("scope").notNull().default("pro"),
     /** recurring subscription still running (shown in the subscriptions view) */
     active: boolean("active").notNull().default(false),

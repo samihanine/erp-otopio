@@ -50,6 +50,13 @@
       "when": 1794956559167,
       "tag": "0006_invoice_lost_event_series",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794959251538,
+      "tag": "0007_bill_paid_by",
+      "breakpoints": true
     }
   ]
 }

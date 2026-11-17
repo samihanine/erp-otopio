@@ -33,7 +33,8 @@ finance.get("/summary", async (c) => {
   const issued = inv.filter((i) => i.status !== "draft" && inYear(i.issueDate, year));
   const yearBills = scoped(bills).filter((b) => b.status !== "cancelled" && inYear(b.issueDate, year));
   // business figures only count professional spending; personal life spending is reported apart
-  const bl = yearBills.filter((b) => b.scope !== "perso");
+  // costs borne by a client (paid with their card / re-billed) are not ours
+  const bl = yearBills.filter((b) => b.scope !== "perso" && b.paidBy !== "client");
   const perso = yearBills.filter((b) => b.scope !== "pro");
   const tx = scoped(txs);
 
@@ -86,7 +87,7 @@ finance.get("/summary", async (c) => {
 
   const byEntity = entities.map((e) => {
     const ei = invoices.filter((i) => i.legalEntityId === e.id && i.status !== "draft" && i.status !== "cancelled" && i.status !== "lost" && inYear(i.issueDate, year));
-    const eb = bills.filter((b) => b.legalEntityId === e.id && b.status !== "cancelled" && b.scope !== "perso" && inYear(b.issueDate, year));
+    const eb = bills.filter((b) => b.legalEntityId === e.id && b.status !== "cancelled" && b.scope !== "perso" && b.paidBy !== "client" && inYear(b.issueDate, year));
     return {
       id: e.id,
       name: e.name,
@@ -142,7 +143,7 @@ finance.get("/summary", async (c) => {
   const PER_MONTH: Record<string, number> = { monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, none: 1 };
   const cardsById = new Map((await db.select().from(schema.creditCard)).map((k) => [k.id, k]));
   const subscriptions = scoped(bills)
-    .filter((b) => b.active)
+    .filter((b) => b.active && b.paidBy !== "client")
     .map((b) => {
       const card = b.cardId ? cardsById.get(b.cardId) : null;
       return {

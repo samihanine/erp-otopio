@@ -589,6 +589,14 @@ export const TABLES: Record<TableKey, TableDef> = {
         width: 100,
       },
       { key: "cardId", label: L("Carte", "Card"), type: "relation", relation: "credit_card", width: 150 },
+      {
+        key: "paidBy",
+        label: L("Payé par", "Paid by"),
+        type: "select",
+        options: [o("entity", "Nous", "Us", "blue"), o("client", "Le client", "The client", "green"), o("other", "Autre", "Other", "gray")],
+        width: 120,
+      },
+      { key: "clientId", label: L("Client concerné", "Related client"), type: "relation", relation: "organization", width: 160 },
       { key: "active", label: L("Abonnement en cours", "Active subscription"), type: "checkbox", hidden: true },
       {
         key: "status",
