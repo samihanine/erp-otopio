@@ -224,7 +224,7 @@ workspace.get("/digest", async (c) => {
 workspace.post("/sync/:job", async (c) => {
   const job = c.req.param("job");
   if (!["drive-sync", "calendar-sync", "gmail-sync", "ai-sync"].includes(job)) return c.json({ error: "Unknown job" }, 400);
-  await queue.add(job, {}, { removeOnComplete: 20, removeOnFail: 20 });
+  await queue.add(job, { full: c.req.query("full") === "1" }, { removeOnComplete: 20, removeOnFail: 20 });
   return c.json({ ok: true });
 });
 

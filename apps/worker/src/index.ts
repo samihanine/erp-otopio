@@ -9,6 +9,7 @@ import { S3Client } from "bun";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { googleConfigured } from "@erp/google";
 import { ensureClientFolders, savePdfToClientFolder, syncDrive } from "./sync/drive";
+import { MEMBERS, setState } from "./sync/common";
 import { deleteEventInGoogle, patchEventInGoogle, pushEventToGoogle, syncCalendars } from "./sync/calendar";
 import { syncGmail } from "./sync/gmail";
 import { dashboardDigest, summarizeClients, summarizeCommunications } from "./sync/ai";
@@ -85,6 +86,7 @@ const worker = new Worker(
       case "client-folder":
         return googleConfigured() ? Object.fromEntries(await ensureClientFolders(job.data.organizationId)) : null;
       case "calendar-sync":
+        if (job.data?.full) for (const m of MEMBERS) await setState(`calendar:${m}:syncToken`, "");
         return googleConfigured() ? syncCalendars() : null;
       case "event-push":
         return googleConfigured() ? (job.data.action === "delete" ? deleteEventInGoogle(job.data.owner, job.data.googleEventId) : job.data.action === "update" ? patchEventInGoogle(job.data.id) : pushEventToGoogle(job.data.id)) : null;
