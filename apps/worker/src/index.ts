@@ -15,6 +15,7 @@ import { attachMissingReceipts, syncGmail } from "./sync/gmail";
 import { syncPersonalGmail } from "./sync/personal";
 import { qontoConfigured, syncQonto } from "./sync/qonto";
 import { dashboardDigest, summarizeClients, summarizeCommunications } from "./sync/ai";
+import { runOneOffReports } from "./sync/reports";
 
 const env = process.env;
 const QUEUE = "erp";
@@ -133,6 +134,7 @@ if (env.SYNC_ENABLED !== "false") {
   for (const id of ["drive-sync", "calendar-sync", "gmail-sync", "qonto-sync", "personal-gmail-sync", "ai-sync"]) await queue.removeJobScheduler(id).catch(() => {});
 }
 
+if (googleConfigured()) runOneOffReports().catch((e) => console.error("[report]", (e as Error).message));
 console.log(`[worker] ready — R2 ${r2Ready ? "configured" : "not configured"}, backups "${env.BACKUP_CRON ?? "0 3 * * *"}"`);
 
 const shutdown = async () => {
