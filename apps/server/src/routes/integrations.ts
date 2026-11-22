@@ -203,7 +203,18 @@ integrations.get("/google-personal/callback", async (c) => {
 /** Accounts connected by the current user. */
 integrations.get("/google-personal", async (c) => {
   const rows = await db.select().from(schema.syncState).where(like(schema.syncState.key, stateKey(`${c.get("user")!.email}:%`)));
-  return c.json(rows.map((r) => ({ email: r.key.split(":").slice(2).join(":"), updatedAt: r.updatedAt })));
+  const ent = await db.select().from(schema.syncState).where(like(schema.syncState.key, "personal-google:entity:%"));
+  const entity = new Map(ent.map((e) => [e.key.slice("personal-google:entity:".length), e.value]));
+  return c.json(rows.map((r) => { const email = r.key.split(":").slice(2).join(":"); return { email, updatedAt: r.updatedAt, entity: entity.get(email) ?? (email === "megascale.technologie@gmail.com" ? "MGS" : null) }; }));
+});
+
+/** Bind a connected account to ONE legal entity (its new mail is then sorted / imported for that entity only). */
+integrations.put("/google-personal/entity", async (c) => {
+  const { email, code } = (await c.req.json()) as { email: string; code: string | null };
+  const key = `personal-google:entity:${email.toLowerCase()}`;
+  if (!code) await db.delete(schema.syncState).where(eq(schema.syncState.key, key));
+  else await putState(key, code);
+  return c.json({ ok: true });
 });
 
 /** Short-lived access token (1h) for one of the current user's connected accounts. */

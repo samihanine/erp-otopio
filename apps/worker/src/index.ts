@@ -12,6 +12,8 @@ import { ensureClientFolders, savePdfToClientFolder, syncDrive } from "./sync/dr
 import { MEMBERS, setState } from "./sync/common";
 import { deleteEventInGoogle, patchEventInGoogle, pushEventToGoogle, syncCalendars } from "./sync/calendar";
 import { syncGmail } from "./sync/gmail";
+import { syncPersonalGmail } from "./sync/personal";
+import { qontoConfigured, syncQonto } from "./sync/qonto";
 import { dashboardDigest, summarizeClients, summarizeCommunications } from "./sync/ai";
 
 const env = process.env;
@@ -92,6 +94,10 @@ const worker = new Worker(
         return googleConfigured() ? (job.data.action === "delete" ? deleteEventInGoogle(job.data.owner, job.data.googleEventId) : job.data.action === "update" ? patchEventInGoogle(job.data.id) : pushEventToGoogle(job.data.id)) : null;
       case "gmail-sync":
         return googleConfigured() ? syncGmail() : null;
+      case "qonto-sync":
+        return qontoConfigured() ? syncQonto() : null;
+      case "personal-gmail-sync":
+        return syncPersonalGmail();
       case "ai-sync": {
         const comms = await summarizeCommunications();
         const clients = await summarizeClients();
@@ -116,9 +122,11 @@ if (env.SYNC_ENABLED !== "false") {
   await queue.upsertJobScheduler("drive-sync", { every: 5 * 60_000 }, { name: "drive-sync", opts: keep });
   await queue.upsertJobScheduler("calendar-sync", { every: 2 * 60_000 }, { name: "calendar-sync", opts: keep });
   await queue.upsertJobScheduler("gmail-sync", { every: 5 * 60_000 }, { name: "gmail-sync", opts: keep });
+  await queue.upsertJobScheduler("qonto-sync", { every: 15 * 60_000 }, { name: "qonto-sync", opts: keep });
+  await queue.upsertJobScheduler("personal-gmail-sync", { every: 5 * 60_000 }, { name: "personal-gmail-sync", opts: keep });
   await queue.upsertJobScheduler("ai-sync", { every: 60 * 60_000 }, { name: "ai-sync", opts: keep });
 } else {
-  for (const id of ["drive-sync", "calendar-sync", "gmail-sync", "ai-sync"]) await queue.removeJobScheduler(id).catch(() => {});
+  for (const id of ["drive-sync", "calendar-sync", "gmail-sync", "qonto-sync", "personal-gmail-sync", "ai-sync"]) await queue.removeJobScheduler(id).catch(() => {});
 }
 
 console.log(`[worker] ready — R2 ${r2Ready ? "configured" : "not configured"}, backups "${env.BACKUP_CRON ?? "0 3 * * *"}"`);

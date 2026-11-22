@@ -241,9 +241,35 @@ workspace.get("/digest", async (c) => {
 
 workspace.post("/sync/:job", async (c) => {
   const job = c.req.param("job");
-  if (!["drive-sync", "calendar-sync", "gmail-sync", "ai-sync"].includes(job)) return c.json({ error: "Unknown job" }, 400);
+  if (!["drive-sync", "calendar-sync", "gmail-sync", "qonto-sync", "personal-gmail-sync", "ai-sync"].includes(job)) return c.json({ error: "Unknown job" }, 400);
   await queue.add(job, { full: c.req.query("full") === "1" }, { removeOnComplete: 20, removeOnFail: 20 });
   return c.json({ ok: true });
+});
+
+/** Items needing attention: expenses / invoices without justificatif, uncategorised expenses, bank lines not matched. */
+workspace.get("/alerts", async (c) => {
+  const [bills, invoices, txs, ents] = await Promise.all([
+    db.select().from(schema.bill),
+    db.select().from(schema.invoice),
+    db.select().from(schema.transaction),
+    db.select().from(schema.legalEntity),
+  ]);
+  const code = new Map(ents.map((e) => [e.id, e.code]));
+  const proBills = bills.filter((b) => b.status !== "cancelled" && b.scope === "pro" && b.paidBy === "entity" && Number(b.total) > 0);
+  const missing = proBills.filter((b) => !b.fileUrl);
+  const uncategorised = proBills.filter((b) => b.category === "other");
+  const invMissing = invoices.filter((i) => !["draft", "cancelled", "lost"].includes(i.status) && !i.fileUrl);
+  const billIds = new Set(txs.map((t) => t.billId).filter(Boolean));
+  const unmatchedTx = txs.filter((t) => t.source === "qonto" && t.nature === "operating" && (t.side === "debit" ? !t.billId : !t.invoiceId));
+  const slim = (b: (typeof bills)[number]) => ({ id: b.id, label: b.label, date: b.issueDate, amount: Number(b.total), currency: b.currency, entity: code.get(b.legalEntityId) ?? "" });
+  return c.json({
+    total: missing.length + uncategorised.length + invMissing.length + unmatchedTx.length,
+    billsWithoutReceipt: { count: missing.length, items: missing.sort((a, b) => String(b.issueDate).localeCompare(String(a.issueDate))).slice(0, 8).map(slim) },
+    billsUncategorised: { count: uncategorised.length, items: uncategorised.slice(0, 8).map(slim) },
+    invoicesWithoutFile: { count: invMissing.length, items: invMissing.slice(0, 8).map((i) => ({ id: i.id, label: i.number, date: i.issueDate, amount: Number(i.total), currency: i.currency, entity: code.get(i.legalEntityId) ?? "" })) },
+    bankUnmatched: { count: unmatchedTx.length, items: unmatchedTx.slice(0, 8).map((t) => ({ id: t.id, label: t.label, date: t.date, amount: Number(t.amount), currency: t.currency, entity: code.get(t.legalEntityId) ?? "" })) },
+    linkedBills: billIds.size,
+  });
 });
 
 workspace.get("/jobs", async (c) => {

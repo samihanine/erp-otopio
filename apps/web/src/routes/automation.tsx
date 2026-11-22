@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { fmtRelative, useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
+import { formatMoney } from "@erp/shared";
 import { cn } from "@/lib/utils";
 
 /** Minimal markdown: **bold**, bullet lines and paragraphs. */
@@ -88,6 +90,7 @@ const JOBS = [
   { job: "drive-sync", label: "Drive" },
   { job: "calendar-sync", label: "Agenda" },
   { job: "gmail-sync", label: "Gmail" },
+  { job: "qonto-sync", label: "Qonto" },
   { job: "ai-sync", label: "IA" },
 ];
 
@@ -119,7 +122,7 @@ export function AutomationJournal() {
       <p className="mb-3 text-[13px] text-muted">
         {tr({ fr: "Tout ce que la synchronisation a créé ou modifié automatiquement. Chaque action réversible peut être annulée.", en: "Everything the sync created or changed automatically. Reversible actions can be undone." })}
       </p>
-      <div className="mb-3 grid gap-2 sm:grid-cols-4">
+      <div className="mb-3 grid gap-2 sm:grid-cols-5">
         {lastByName.map((j) => (
           <div key={j.job} className="rounded-lg border border-border px-3 py-2 text-xs" title={j.last?.error ?? ""}>
             <div className="flex items-center gap-1.5 font-medium">
@@ -174,7 +177,7 @@ export function AutomationJournal() {
 export function PersonalGoogle() {
   const { tr, locale } = useI18n();
   const qc = useQueryClient();
-  const { data = [] } = useQuery({ queryKey: ["personal-google"], queryFn: () => api<{ email: string; updatedAt: string }[]>("/integrations/google-personal") });
+  const { data = [] } = useQuery({ queryKey: ["personal-google"], queryFn: () => api<{ email: string; updatedAt: string; entity: string | null }[]>("/integrations/google-personal") });
   useEffect(() => {
     const p = new URLSearchParams(location.search);
     const g = p.get("google");
@@ -203,6 +206,18 @@ export function PersonalGoogle() {
           <div key={a.email} className="flex items-center gap-3 border-b border-border px-4 py-2.5 text-[13px] last:border-0">
             <span className="size-1.5 rounded-full bg-emerald-500" />
             <span className="flex-1">{a.email}</span>
+            <Combobox
+              size="xs"
+              className="w-56"
+              placeholder={tr({ fr: "Structure liée…", en: "Linked entity…" })}
+              value={a.entity ?? ""}
+              onChange={async (v) => {
+                await api("/integrations/google-personal/entity", { method: "PUT", body: JSON.stringify({ email: a.email, code: v || null }) });
+                qc.invalidateQueries({ queryKey: ["personal-google"] });
+                toast.success(tr({ fr: "Structure mise à jour", en: "Entity updated" }));
+              }}
+              options={[{ value: "MGS", label: "Megascale Technologie SARL" }, { value: "OTP", label: "Otopio Inc." }]}
+            />
             <span className="text-xs text-subtle">{fmtRelative(a.updatedAt, locale)}</span>
             <Button size="sm" variant="ghost" onClick={() => remove(a.email)}>
               {tr({ fr: "Déconnecter", en: "Disconnect" })}
@@ -210,6 +225,42 @@ export function PersonalGoogle() {
           </div>
         ))}
         {!data.length && <div className="p-5 text-center text-[13px] text-subtle">{tr({ fr: "Aucun compte connecté.", en: "No account connected." })}</div>}
+      </div>
+    </section>
+  );
+}
+
+type AlertGroup = { count: number; items: { id: string; label: string; date: string | null; amount: number; currency: string; entity: string }[] };
+export function AlertsCard() {
+  const { tr, locale } = useI18n();
+  const { data } = useQuery({ queryKey: ["ws", "alerts"], queryFn: () => api<{ total: number; billsWithoutReceipt: AlertGroup; billsUncategorised: AlertGroup; invoicesWithoutFile: AlertGroup; bankUnmatched: AlertGroup }>("/ws/alerts"), staleTime: 60_000 });
+  if (!data || !data.total) return null;
+  const groups: { title: string; g: AlertGroup; table: string }[] = [
+    { title: tr({ fr: "Dépenses sans justificatif", en: "Expenses without receipt" }), g: data.billsWithoutReceipt, table: "bill" },
+    { title: tr({ fr: "Dépenses non catégorisées", en: "Uncategorised expenses" }), g: data.billsUncategorised, table: "bill" },
+    { title: tr({ fr: "Factures sans fichier", en: "Invoices without file" }), g: data.invoicesWithoutFile, table: "invoice" },
+    { title: tr({ fr: "Lignes bancaires non rapprochées", en: "Unmatched bank lines" }), g: data.bankUnmatched, table: "transaction" },
+  ].filter((x) => x.g.count > 0);
+  return (
+    <section className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+      <h2 className="mb-2 text-[12px] font-medium uppercase tracking-wider text-amber-600">{tr({ fr: "À traiter", en: "Needs attention" })} · {data.total}</h2>
+      <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+        {groups.map((x) => (
+          <div key={x.title} className="min-w-0">
+            <Link to="/db/$table" params={{ table: x.table }} search={{}} className="text-[12.5px] font-semibold hover:underline">
+              {x.title} ({x.g.count})
+            </Link>
+            <ul className="mt-0.5 space-y-0.5 text-[12px] text-muted">
+              {x.g.items.slice(0, 3).map((i) => (
+                <li key={i.id} className="truncate">
+                  <Link to="/db/$table/$id" params={{ table: x.table, id: i.id }} className="hover:underline">
+                    {i.entity} · {i.date} · {i.label} · {formatMoney(i.amount, i.currency, locale)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
     </section>
   );
