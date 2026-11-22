@@ -19,6 +19,7 @@ export type FinanceSummary = {
   currency: string;
   consolidated: boolean;
   fx?: { date: string; source: string; rates: Record<string, number> };
+  breakdown?: Record<"collected" | "expenses" | "balance", { ht: number; vat: number; ttc: number }>;
   kpis: { invoicedHT: number; invoicedTTC: number; collected: number; outstanding: number; overdue: number; expenses: number; margin: number; openCount: number };
   monthly: { month: string; revenue: number; expenses: number; collected: number }[];
   byClient: { id: string; name: string; amount: number }[];
@@ -135,6 +136,35 @@ export function FinancePage() {
                 </div>
                 <div className="mt-3 text-[22px] font-semibold tabular-nums tracking-tight">{isLoading ? <Skeleton className="h-7 w-24" /> : money(k.value ?? 0)}</div>
                 {k.sub ? <div className="mt-1 text-xs text-subtle">{k.sub}</div> : null}
+              </div>
+            ))}
+          </div>
+
+          {/* HT / VAT / TTC detail */}
+          <div className="mt-3 overflow-hidden rounded-xl border border-border">
+            <div className="grid grid-cols-[minmax(110px,1.2fr)_repeat(3,minmax(0,1fr))] border-b border-border bg-surface-2/50 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-subtle">
+              <span />
+              <span className="text-right">{tr({ fr: "Total HT", en: "Total excl. VAT" })}</span>
+              <span className="text-right">{tr({ fr: "TVA", en: "VAT" })}</span>
+              <span className="text-right">{tr({ fr: "Total TTC", en: "Total incl. VAT" })}</span>
+            </div>
+            {(
+              [
+                ["collected", tr({ fr: "Encaissé", en: "Collected" }), "text-emerald-700 dark:text-emerald-400", tr({ fr: "TVA collectée", en: "VAT collected" })],
+                ["expenses", tr({ fr: "Dépenses", en: "Expenses" }), "text-rose-700 dark:text-rose-400", tr({ fr: "TVA déductible", en: "Deductible VAT" })],
+                ["balance", tr({ fr: "Bilan", en: "Balance" }), "text-fg", tr({ fr: "TVA à reverser", en: "VAT payable" })],
+              ] as const
+            ).map(([k, label, tone, vatLabel], i) => (
+              <div key={k} className={cn("grid grid-cols-[minmax(110px,1.2fr)_repeat(3,minmax(0,1fr))] items-center px-4 py-3 text-[15px] tabular-nums", i < 2 && "border-b border-border", k === "balance" && "bg-surface-2/40 font-semibold")}>
+                <span className={cn("text-[13px] font-medium", tone)}>
+                  {label}
+                  <span className="block text-[11px] font-normal text-subtle">{vatLabel}</span>
+                </span>
+                {(["ht", "vat", "ttc"] as const).map((c) => (
+                  <span key={c} className="text-right">
+                    {isLoading || !data?.breakdown ? <Skeleton className="ml-auto h-5 w-20" /> : money(data.breakdown[k][c])}
+                  </span>
+                ))}
               </div>
             ))}
           </div>

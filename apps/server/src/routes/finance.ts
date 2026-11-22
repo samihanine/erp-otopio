@@ -67,6 +67,22 @@ finance.get("/summary", async (c) => {
     sum(tx.filter((t) => t.side === "credit" && inYear(t.date, year)).map((t) => conv(t.amount, t.currency))) +
       sum(paidNoFeed.filter((i) => inYear(paidOn(i), year)).map((i) => conv(i.amountPaid, i.currency))),
   );
+  // HT / VAT / TTC breakdown of what was collected: credits linked to an invoice follow that invoice's VAT ratio
+  const invById = new Map(invoices.map((i) => [i.id, i]));
+  const htRatio = (i?: { subtotal: number; total: number }) => (i && i.total > 0 ? i.subtotal / i.total : 1);
+  const collectedParts = [
+    ...tx.filter((t) => t.side === "credit" && inYear(t.date, year)).map((t) => ({ ttc: conv(t.amount, t.currency), ratio: htRatio(t.invoiceId ? invById.get(t.invoiceId) : undefined) })),
+    ...paidNoFeed.filter((i) => inYear(paidOn(i), year)).map((i) => ({ ttc: conv(i.amountPaid, i.currency), ratio: htRatio(i) })),
+  ];
+  const collectedTTC = sum(collectedParts.map((x) => x.ttc));
+  const collectedHT = sum(collectedParts.map((x) => x.ttc * x.ratio));
+  const expTTC = sum(bl.map((b) => conv(b.total, b.currency)));
+  const expVAT = sum(bl.map((b) => conv(b.taxTotal, b.currency)));
+  const breakdown = {
+    collected: { ht: collectedHT, vat: round2(collectedTTC - collectedHT), ttc: collectedTTC },
+    expenses: { ht: round2(expTTC - expVAT), vat: expVAT, ttc: expTTC },
+    balance: { ht: round2(collectedHT - (expTTC - expVAT)), vat: round2(collectedTTC - collectedHT - expVAT), ttc: round2(collectedTTC - expTTC) },
+  };
   const open = inv.filter((i) => ["sent", "partial", "overdue"].includes(i.status));
   const outstanding = sum(open.map((i) => conv(i.total - i.amountPaid, i.currency)));
   const overdueList = open.filter((i) => i.status === "overdue" || (i.dueDate && i.dueDate < today()));
@@ -185,6 +201,7 @@ finance.get("/summary", async (c) => {
     currency,
     consolidated: !entity,
     fx: { date: fx.date, source: fx.source, rates: Object.fromEntries(Object.entries(fx.toCAD).map(([k, v]) => [k, round2((v / (fx.toCAD[currency] ?? 1)) * 10000) / 10000])) },
+    breakdown,
     kpis: { invoicedHT, invoicedTTC, collected, outstanding, overdue, expenses, margin: round2(invoicedHT - expenses), openCount: open.length },
     monthly,
     byClient,
