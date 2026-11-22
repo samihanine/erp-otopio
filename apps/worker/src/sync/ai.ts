@@ -64,16 +64,24 @@ export async function summarizeClients() {
   return n;
 }
 
+/** One weekly digest per workspace (key dashboard:digest:<CODE>). */
 export async function dashboardDigest() {
   if (!aiEnabled()) return false;
+  let n = 0;
+  for (const ws of await db.select().from(schema.legalEntity)) if (await digestFor(ws.id, ws.code)) n++;
+  return n;
+}
+
+async function digestFor(wsId: string, code: string) {
   const since = new Date(Date.now() - 7 * 864e5);
   const [comms, tasks, invoices, bills, events] = await Promise.all([
-    db.select().from(schema.communication).where(gte(schema.communication.occurredAt, since)).orderBy(desc(schema.communication.occurredAt)).limit(60),
-    db.select().from(schema.task).where(sql`${schema.task.status} not in ('done','cancelled')`),
-    db.select().from(schema.transaction).where(sql`${schema.transaction.kind} = 'invoice' and ${schema.transaction.status} in ('sent','partial','overdue')`),
-    db.select().from(schema.transaction).where(and(eq(schema.transaction.kind, "expense"), gte(schema.transaction.createdAt, since))),
-    db.select().from(schema.event).where(and(gte(schema.event.startAt, new Date()), lt(schema.event.startAt, new Date(Date.now() + 7 * 864e5)), eq(schema.event.isPrivate, false))),
+    db.select().from(schema.communication).where(and(eq(schema.communication.workspaceId, wsId), gte(schema.communication.occurredAt, since))).orderBy(desc(schema.communication.occurredAt)).limit(60),
+    db.select().from(schema.task).where(and(eq(schema.task.workspaceId, wsId), sql`${schema.task.status} not in ('done','cancelled')`)),
+    db.select().from(schema.transaction).where(and(eq(schema.transaction.workspaceId, wsId), sql`${schema.transaction.kind} = 'invoice' and ${schema.transaction.status} in ('sent','partial','overdue')`)),
+    db.select().from(schema.transaction).where(and(eq(schema.transaction.workspaceId, wsId), eq(schema.transaction.kind, "expense"), gte(schema.transaction.createdAt, since))),
+    db.select().from(schema.event).where(and(eq(schema.event.workspaceId, wsId), gte(schema.event.startAt, new Date()), lt(schema.event.startAt, new Date(Date.now() + 7 * 864e5)), eq(schema.event.isPrivate, false))),
   ]);
+  if (!comms.length && !tasks.length && !invoices.length && !bills.length && !events.length) return false;
   const today = new Date().toISOString().slice(0, 10);
   const ctx = [
     `Aujourd'hui: ${today}`,
@@ -90,6 +98,6 @@ export async function dashboardDigest() {
     "point-hebdo",
   ).catch(() => null);
   if (!digest) return false;
-  await setState("dashboard:digest", JSON.stringify({ digest, at: new Date().toISOString() }));
+  await setState(`dashboard:digest:${code}`, JSON.stringify({ digest, at: new Date().toISOString() }));
   return true;
 }

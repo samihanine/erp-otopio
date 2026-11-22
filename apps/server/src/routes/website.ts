@@ -10,6 +10,7 @@ import { db, schema } from "@erp/db";
 import { TABLES, type TableKey } from "@erp/shared";
 import type { AppEnv } from "../lib/types";
 import { columns, isTableKey, TABLE_MAP } from "../lib/data";
+import { wsOf } from "../lib/workspace";
 
 type Row = Record<string, unknown> & { translations?: Record<string, Record<string, unknown>> };
 
@@ -32,8 +33,21 @@ publicApi.use("*", async (c, next) => {
 
 const loc = (q?: string) => (q === "en" ? "en" : "fr");
 
+/** Site → workspace: `?site=megascale.otopio.ca` (or slug), else the Origin host, else otopio.ca */
+const siteCache = new Map<string, { id: string; at: number }>();
+async function siteWs(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }) {
+  const host = (c.req.query("site") ?? (c.req.header("origin") ?? "").replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] ?? "").toLowerCase();
+  const key = host || "otopio.ca";
+  const hit = siteCache.get(key);
+  if (hit && Date.now() - hit.at < 300_000) return hit.id;
+  const rows = await db.select({ id: schema.legalEntity.id, domain: schema.legalEntity.websiteDomain, slug: schema.legalEntity.slug, code: schema.legalEntity.code }).from(schema.legalEntity);
+  const ws = rows.find((r) => r.domain === key || r.slug === key) ?? rows.find((r) => r.code === "OTP")!;
+  siteCache.set(key, { id: ws.id, at: Date.now() });
+  return ws.id;
+}
+
 publicApi.get("/artifacts", async (c) => {
-  const rows = await db.select().from(schema.artifact).where(eq(schema.artifact.status, "published")).orderBy(asc(schema.artifact.position), desc(schema.artifact.startedAt));
+  const rows = await db.select().from(schema.artifact).where(and(eq(schema.artifact.workspaceId, await siteWs(c)), eq(schema.artifact.status, "published"))).orderBy(asc(schema.artifact.position), desc(schema.artifact.startedAt));
   return c.json(rows.map((r) => localize(r as Row, loc(c.req.query("locale")))));
 });
 
@@ -41,12 +55,12 @@ publicApi.get("/artifacts/:slug", async (c) => {
   const [r] = await db
     .select()
     .from(schema.artifact)
-    .where(and(eq(schema.artifact.slug, c.req.param("slug")), eq(schema.artifact.status, "published")));
+    .where(and(eq(schema.artifact.workspaceId, await siteWs(c)), eq(schema.artifact.slug, c.req.param("slug")), eq(schema.artifact.status, "published")));
   return r ? c.json(localize(r as Row, loc(c.req.query("locale")))) : c.json({ error: "Not found" }, 404);
 });
 
 publicApi.get("/team", async (c) => {
-  const rows = await db.select().from(schema.teamMember).where(eq(schema.teamMember.status, "published")).orderBy(asc(schema.teamMember.position));
+  const rows = await db.select().from(schema.teamMember).where(and(eq(schema.teamMember.workspaceId, await siteWs(c)), eq(schema.teamMember.status, "published"))).orderBy(asc(schema.teamMember.position));
   return c.json(rows.map((r) => localize(r as Row, loc(c.req.query("locale")))));
 });
 
@@ -66,7 +80,7 @@ const articleCols = {
 };
 
 publicApi.get("/articles", async (c) => {
-  const rows = await db.select(articleCols).from(schema.article).where(eq(schema.article.status, "published")).orderBy(desc(schema.article.publishedAt));
+  const rows = await db.select(articleCols).from(schema.article).where(and(eq(schema.article.workspaceId, await siteWs(c)), eq(schema.article.status, "published"))).orderBy(desc(schema.article.publishedAt));
   return c.json(rows.map((r) => localize(r as Row, loc(c.req.query("locale")))));
 });
 
@@ -74,7 +88,7 @@ publicApi.get("/articles/:slug", async (c) => {
   const [r] = await db
     .select({ ...articleCols, content: schema.article.content })
     .from(schema.article)
-    .where(and(eq(schema.article.slug, c.req.param("slug")), eq(schema.article.status, "published")));
+    .where(and(eq(schema.article.workspaceId, await siteWs(c)), eq(schema.article.slug, c.req.param("slug")), eq(schema.article.status, "published")));
   return r ? c.json(localize(r as Row, loc(c.req.query("locale")))) : c.json({ error: "Not found" }, 404);
 });
 
@@ -88,7 +102,7 @@ websiteAdmin.post("/translate/:table/:id", async (c) => {
   const target = (c.req.query("to") ?? "en").toLowerCase();
   const fields = TABLES[key as TableKey].translatable!;
   const cols = columns(key);
-  const [row] = (await db.select().from(TABLE_MAP[key]).where(eq(cols.id!, c.req.param("id")))) as Row[];
+  const [row] = (await db.select().from(TABLE_MAP[key]).where(and(eq(cols.id!, c.req.param("id")), eq(cols.workspaceId!, wsOf(c).id)))) as Row[];
   if (!row) return c.json({ error: "Not found" }, 404);
   if (!aiEnabled()) return c.json({ error: "ANTHROPIC_API_KEY manquante" }, 503);
   const source = Object.fromEntries(fields.map((f) => [f, row[f]]).filter(([, v]) => v != null && v !== ""));

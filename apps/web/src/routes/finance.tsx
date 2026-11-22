@@ -1,3 +1,4 @@
+import { useWorkspaces } from "@/lib/workspace";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -50,20 +51,22 @@ export function FinancePage() {
   const navigate = useNavigate();
   const [year, setYear] = useState<string>("all");
   const [months, setMonths] = useState<number[]>([]);
-  const [entity, setEntity] = useState("all");
-  const [view, setView] = usePrefValue<"dashboard" | "taxes">("finance:view", "dashboard");
+  const entity = "all";
+  const [view0, setView] = usePrefValue<"dashboard" | "taxes">("finance:view", "dashboard");
+  const { enabled, ws } = useWorkspaces();
+  const view = !enabled("taxes") ? "dashboard" : !enabled("finance") ? "taxes" : view0;
   const [grain, setGrain] = usePrefValue<"month" | "year">("finance:grain", "month");
   const [currency, setCurrency] = useState<string>(() => {
     try {
-      return localStorage.getItem("erp.finance.currency") ?? "CAD";
+      return localStorage.getItem(`erp.finance.currency.${ws?.id}`) ?? ws?.currency ?? "CAD";
     } catch {
-      return "CAD";
+      return ws?.currency ?? "CAD";
     }
   });
   const pickCurrency = (c: string) => {
     setCurrency(c);
     try {
-      localStorage.setItem("erp.finance.currency", c);
+      localStorage.setItem(`erp.finance.currency.${ws?.id}`, c);
     } catch {}
   };
   const { data, isLoading } = useQuery({
@@ -86,10 +89,14 @@ export function FinancePage() {
   return (
     <AppShell
       title={t("finance")}
-      tabs={[
-        { key: "dashboard", label: tr({ fr: "Finance", en: "Finance" }), onClick: () => setView("dashboard"), active: view === "dashboard" },
-        { key: "taxes", label: tr({ fr: "Fiscal", en: "Tax" }), onClick: () => setView("taxes"), active: view === "taxes" },
-      ]}
+      tabs={
+        enabled("finance") && enabled("taxes")
+          ? [
+              { key: "dashboard", label: tr({ fr: "Finance", en: "Finance" }), onClick: () => setView("dashboard"), active: view === "dashboard" },
+              { key: "taxes", label: tr({ fr: "Fiscal", en: "Tax" }), onClick: () => setView("taxes"), active: view === "taxes" },
+            ]
+          : []
+      }
       actions={
         view === "taxes" ? null : (
         <div className="flex items-center gap-2">
@@ -110,7 +117,6 @@ export function FinancePage() {
             options={MONTHS.map((m, i) => ({ value: String(i + 1), label: m.charAt(0).toUpperCase() + m.slice(1) }))}
           />
           <Segmented value={currency} onChange={pickCurrency} options={["CAD", "EUR", "USD"].map((c) => ({ value: c, label: c }))} />
-          <Combobox size="md" className="w-60" value={entity} onChange={(v) => setEntity(v ?? "all")} options={[{ value: "all", label: t("allEntities") }, ...(data?.byEntity ?? []).map((e) => ({ value: e.id, label: `${e.name} (${e.country})` }))]} />
         </div>
         )
       }
@@ -385,7 +391,7 @@ function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) =>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px] font-medium">{r.label}</span>
                 <span className="block truncate text-[11.5px] text-subtle">
-                  {r.date ? fmtDate(r.date, locale, { day: "numeric", month: "short", year: "2-digit" }) : "—"} · {r.entity} · {r.side === "income" ? tr({ fr: "Recette", en: "Income" }) : o ? tr(o.label) : r.category}
+                  {r.date ? fmtDate(r.date, locale, { day: "numeric", month: "short", year: "2-digit" }) : "—"} · {r.side === "income" ? tr({ fr: "Recette", en: "Income" }) : o ? tr(o.label) : r.category}
                   {r.reimburse ? ` · ${tr({ fr: "à rembourser", en: "reimburse" })}` : ""}
                 </span>
               </span>
@@ -405,7 +411,6 @@ function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) =>
               <th className="px-4 py-2 font-medium">{tr({ fr: "Date", en: "Date" })}</th>
               <th className="px-4 py-2 font-medium">{tr({ fr: "Libellé", en: "Label" })}</th>
               <th className="px-4 py-2 font-medium">{tr({ fr: "Catégorie", en: "Category" })}</th>
-              <th className="px-4 py-2 font-medium">{tr({ fr: "Structure", en: "Entity" })}</th>
               <th className="px-4 py-2 text-right font-medium">{tr({ fr: "Montant", en: "Amount" })}</th>
               <th className="px-4 py-2 text-center font-medium">{tr({ fr: "Justificatif", en: "Receipt" })}</th>
               <th className="px-4 py-2" />
@@ -432,7 +437,6 @@ function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) =>
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-xs text-muted">{r.entity}</td>
                   <td className={cn("whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums", r.side === "income" ? "text-emerald-700 dark:text-emerald-400" : "")}>
                     {r.side === "income" ? "+" : "−"} {money(r.amount)}
                     {r.currency !== cur && <div className="text-[11px] font-normal text-subtle">{formatMoney(r.original, r.currency, locale)}</div>}

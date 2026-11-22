@@ -18,6 +18,7 @@ import {
 } from "../lib/data";
 import type { AppEnv } from "../lib/types";
 import { queue } from "../lib/queue";
+import { inWs, wsOf } from "../lib/workspace";
 
 /** Side effects to Google (Drive folders, Calendar) handled by the worker */
 async function afterWrite(key: TableKey, row: Record<string, unknown>, before?: Record<string, unknown>, deleted = false) {
@@ -39,7 +40,7 @@ export const data = new Hono<AppEnv>();
 data.get("/_counts", async (c) => {
   const entries = await Promise.all(
     (Object.keys(TABLE_MAP) as TableKey[]).map(async (k) => {
-      const [r] = await db.select({ n: count() }).from(TABLE_MAP[k]);
+      const [r] = await db.select({ n: count() }).from(TABLE_MAP[k]).where(inWs(columns(k), wsOf(c).id));
       return [k, r?.n ?? 0] as const;
     }),
   );
@@ -72,7 +73,7 @@ data.get("/:table", async (c) => {
   const mode = c.req.query("mode") === "or" ? "or" : "and";
   const limit = Math.min(Number(c.req.query("limit") ?? 500), 2000);
   const offset = Number(c.req.query("offset") ?? 0);
-  const where = buildWhere(key, filters, mode, c.req.query("search"));
+  const where = and(inWs(columns(key), wsOf(c).id), buildWhere(key, filters, mode, c.req.query("search")));
   const table = TABLE_MAP[key];
 
   const [rows, [{ total } = { total: 0 }]] = await Promise.all([
@@ -100,9 +101,10 @@ data.get("/:table/options", async (c) => {
   const subtitleKey = TABLES[key].subtitle;
   const sub = subtitleKey && cols[subtitleKey] && TABLES[key].fields.find((f) => f.key === subtitleKey)?.type !== "relation" ? sql<string>`${cols[subtitleKey]}::text` : sql<string>`null`;
   const scope = c.req.query("scope") === "employees" && key === "person" ? sql`${cols.email} ilike '%@otopio.ca'` : undefined;
-  const where = ids?.length
-    ? inArray(cols.id!, ids)
-    : and(scope, q ? sql`${lbl} ilike ${`%${q}%`}` : undefined);
+  const where = and(
+    inWs(cols, wsOf(c).id),
+    ids?.length ? inArray(cols.id!, ids) : and(scope, q ? sql`${lbl} ilike ${`%${q}%`}` : undefined),
+  );
   const rows = await db
     .select({ id: cols.id!, label: lbl, subtitle: sub })
     .from(TABLE_MAP[key])
@@ -116,7 +118,7 @@ data.get("/:table/:id", async (c) => {
   const key = c.req.param("table");
   if (!isTableKey(key)) return c.json({ error: "Unknown table" }, 404);
   const cols = columns(key);
-  const [row] = await db.select().from(TABLE_MAP[key]).where(eq(cols.id!, c.req.param("id")));
+  const [row] = await db.select().from(TABLE_MAP[key]).where(and(eq(cols.id!, c.req.param("id")), inWs(cols, wsOf(c).id)));
   if (!row) return c.json({ error: "Not found" }, 404);
   const refs = await resolveRefs(key, [row as Record<string, unknown>]);
   return c.json({ row, refs });
@@ -136,7 +138,7 @@ data.get("/:table/:id/related", async (c) => {
       const rows = await db
         .select()
         .from(TABLE_MAP[t.key])
-        .where(eq(col, id))
+        .where(and(eq(col, id), inWs(columns(t.key), wsOf(c).id)))
         .orderBy(...buildOrder(t.key, []))
         .limit(50);
       if (rows.length) out.push({ table: t.key, field: f.key, rows, total: rows.length });
@@ -150,6 +152,12 @@ data.post("/:table", async (c) => {
   if (!isTableKey(key)) return c.json({ error: "Unknown table" }, 404);
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   let values = sanitize(key, body);
+  const ws = wsOf(c);
+  if (key === "legal_entity") return c.json({ error: "Les structures se créent depuis les paramètres" }, 400);
+  values.workspaceId = ws.id;
+  if (key === "transaction" || key === "quote" || key === "project") values.legalEntityId = ws.id;
+  if (key === "organization") values.defaultEntityId = ws.id;
+  if (key === "credit_card") values.legalEntityId = ws.id;
 
   if (key === "transaction") {
     values.kind ??= "expense";
@@ -194,14 +202,6 @@ data.post("/:table", async (c) => {
   }
   const primary = TABLES[key].primary;
   if (values[primary] == null || values[primary] === "") values[primary] = key === "person" ? "Nouveau contact" : "Sans titre";
-  if (key === "legal_entity") {
-    values.legalName ??= values.name;
-    values.code ??= String(values.name).slice(0, 3).toUpperCase();
-    values.country ??= "CA";
-    values.currency ??= "CAD";
-    values.invoicePrefix ??= `${values.code}-{YYYY}-`;
-    values.quotePrefix ??= `${values.code}-D{YYYY}-`;
-  }
 
   try {
     if (key === "event") {
@@ -225,7 +225,7 @@ data.patch("/:table/:id", async (c) => {
   if (!isTableKey(key)) return c.json({ error: "Unknown table" }, 404);
   const id = c.req.param("id");
   const cols = columns(key);
-  const [existing] = await db.select().from(TABLE_MAP[key]).where(eq(cols.id!, id));
+  const [existing] = await db.select().from(TABLE_MAP[key]).where(and(eq(cols.id!, id), inWs(cols, wsOf(c).id)));
   if (!existing) return c.json({ error: "Not found" }, 404);
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   let values = sanitize(key, body);
@@ -261,7 +261,9 @@ data.delete("/:table/:id", async (c) => {
   if (!isTableKey(key)) return c.json({ error: "Unknown table" }, 404);
   const cols = columns(key);
   try {
-    const [old] = await db.select().from(TABLE_MAP[key]).where(eq(cols.id!, c.req.param("id")));
+    if (key === "legal_entity") return c.json({ error: "Impossible de supprimer une structure" }, 400);
+    const [old] = await db.select().from(TABLE_MAP[key]).where(and(eq(cols.id!, c.req.param("id")), inWs(cols, wsOf(c).id)));
+    if (!old) return c.json({ error: "Not found" }, 404);
     await db.delete(TABLE_MAP[key]).where(eq(cols.id!, c.req.param("id")));
     if (old) await afterWrite(key, old as Record<string, unknown>, undefined, true);
     await logActivity(key, c.req.param("id"), "deleted", c.get("user")?.id);
@@ -287,7 +289,7 @@ search.get("/", async (c) => {
       const rows = await db
         .select({ id: cols.id!, label: labelExpr(k) })
         .from(TABLE_MAP[k])
-        .where(conds.length ? sql`(${sql.join(conds, sql` or `)})` : undefined)
+        .where(and(inWs(cols, wsOf(c).id), conds.length ? sql`(${sql.join(conds, sql` or `)})` : undefined))
         .limit(6);
       return rows.map((r) => ({ table: k, id: r.id, label: r.label }));
     }),
@@ -300,6 +302,16 @@ search.get("/", async (c) => {
 /* -------------------------------------------------------------------------- */
 
 export const activity = new Hono<AppEnv>();
+/** the record must belong to the current workspace */
+activity.use("/:table/:id", async (c, next) => {
+  const key = c.req.param("table");
+  if (isTableKey(key)) {
+    const cols = columns(key);
+    const [r] = await db.select({ id: cols.id! }).from(TABLE_MAP[key]).where(and(eq(cols.id!, c.req.param("id")), inWs(cols, wsOf(c).id)));
+    if (!r) return c.json({ error: "Not found" }, 404);
+  }
+  return next();
+});
 activity.get("/:table/:id", async (c) => {
   const rows = await db
     .select({

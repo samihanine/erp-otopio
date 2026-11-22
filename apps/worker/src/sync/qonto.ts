@@ -69,7 +69,8 @@ async function storeAttachment(attId: string, table: string, recordId: string) {
   const key = `${table}/${crypto.randomUUID()}-${safe}`;
   const mime = a.attachment.file_content_type || "application/pdf";
   await s3().write(key, data, { type: mime });
-  const [row] = await db.insert(schema.file).values({ key, name, size: data.byteLength, mimeType: mime, table, recordId }).returning();
+  const [mgs] = await db.select({ id: schema.legalEntity.id }).from(schema.legalEntity).where(eq(schema.legalEntity.code, "MGS"));
+  const [row] = await db.insert(schema.file).values({ workspaceId: mgs?.id ?? null, key, name, size: data.byteLength, mimeType: mime, table, recordId }).returning();
   return `${appUrl()}/api/files/${row!.id}`;
 }
 
@@ -79,7 +80,7 @@ export async function syncQonto() {
   if (!mgs) return null;
   const org = await q<{ organization: { bank_accounts: { id: string; status?: string; currency?: string; balance_cents?: number }[] } }>("/organization");
   const stats = { created: 0, bills: 0, invoicesPaid: 0, attachments: 0, skipped: 0 };
-  const existing = await db.select().from(schema.transaction).where(eq(schema.transaction.legalEntityId, mgs.id));
+  const existing = await db.select().from(schema.transaction).where(eq(schema.transaction.workspaceId, mgs.id));
   const have = new Map(existing.filter((t) => t.bankRef).map((t) => [t.bankRef!, t]));
   const openInvoices = existing.filter((t) => t.kind === "invoice" && !t.bankRef);
   let balance = 0;
@@ -131,6 +132,7 @@ export async function syncQonto() {
             label: `${t.label}${t.reference ? ` — ${t.reference}` : ""}`.slice(0, 200),
             counterparty: t.label,
             legalEntityId: mgs.id,
+            workspaceId: mgs.id,
             category: categorize(`${t.label} ${t.reference ?? ""}`) as never,
             status: "paid",
             date,
@@ -168,7 +170,7 @@ export async function syncQonto() {
         } else {
           const [row] = await db
             .insert(schema.transaction)
-            .values({ kind: "movement", side: "credit", legalEntityId: mgs.id, date, paidAt: date, label: t.label, counterparty: t.label, total: t.amount, subtotal: t.amount, amountPaid: t.amount, currency: t.currency, source: "qonto", bankRef: ref, nature: "operating", status: "paid", notes: t.note ?? null })
+            .values({ kind: "movement", side: "credit", legalEntityId: mgs.id, workspaceId: mgs.id, date, paidAt: date, label: t.label, counterparty: t.label, total: t.amount, subtotal: t.amount, amountPaid: t.amount, currency: t.currency, source: "qonto", bankRef: ref, nature: "operating", status: "paid", notes: t.note ?? null })
             .returning();
           have.set(ref, row!);
           await log("qonto-tx", "transaction", row!.id, `Encaissement Qonto ${t.amount} ${t.currency} — ${t.label} (aucune facture associée)`);

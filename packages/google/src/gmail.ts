@@ -61,6 +61,12 @@ export const gmail = {
   createFilter: (user: string, criteria: Record<string, string>, action: { addLabelIds?: string[]; removeLabelIds?: string[] }) =>
     gfetch(user, SCOPES.gmailSettings, `${G}/settings/filters`, { method: "POST", json: { criteria, action } }),
   deleteFilter: (user: string, id: string) => gfetch(user, SCOPES.gmailSettings, `${G}/settings/filters/${id}`, { method: "DELETE" }),
+  /** Sends a simple HTML email from `user` (RFC 2822, base64url). */
+  send: (user: string, to: string, subject: string, html: string, fromName = "Otopio") => {
+    const enc = (v: string) => `=?UTF-8?B?${Buffer.from(v).toString("base64")}?=`;
+    const raw = [`From: ${enc(fromName)} <${user}>`, `To: ${to}`, `Subject: ${enc(subject)}`, "MIME-Version: 1.0", "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", Buffer.from(html).toString("base64")].join("\r\n");
+    return gfetch<{ id: string }>(user, SCOPES.gmail, `${G}/messages/send`, { method: "POST", json: { raw: Buffer.from(raw).toString("base64url") } });
+  },
   profile: (user: string) => gfetch<{ emailAddress: string; messagesTotal: number; historyId: string }>(user, SCOPES.gmail, `${G}/profile`),
   history: (user: string, startHistoryId: string) =>
     gfetch<{ history?: { messagesAdded?: { message: GmailMessage }[] }[]; historyId: string }>(user, SCOPES.gmail, `${G}/history?startHistoryId=${startHistoryId}&historyTypes=messageAdded&maxResults=500`),

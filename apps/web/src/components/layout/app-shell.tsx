@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as Dl from "@radix-ui/react-dialog";
-import { Briefcase, CalendarDays, Database, FileText, Globe, Home, Languages, LogOut, Menu as MenuIcon, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings, Sun, Wallet, X } from "lucide-react";
+import { Briefcase, CalendarDays, Check, ChevronsUpDown, Database, FileText, Globe, Home, Languages, LogOut, Menu as MenuIcon, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings, Sun, Wallet, X } from "lucide-react";
 import { useMedia, usePref, useResizableWidth } from "@/lib/use-media";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { useI18n, type DictKey } from "@/lib/i18n";
@@ -11,19 +11,72 @@ import { Avatar, Kbd } from "@/components/ui/misc";
 import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparator, DropdownTrigger } from "@/components/ui/dropdown";
 import { CommandMenu } from "./command-menu";
 import { OtopioLogo } from "./logo";
+import { useWorkspaces, type ModuleKey, type WorkspaceInfo } from "@/lib/workspace";
 
 /** sections shown in the mobile bottom tab bar (the rest is under « Plus ») */
 const TABS = ["home", "clients", "db", "finance"];
 
-type Section = { key: string; to: string; icon: typeof Home; label: DictKey; match: (p: string) => boolean };
+type Section = { key: string; to: string; icon: typeof Home; label: DictKey; match: (p: string) => boolean; modules: ModuleKey[] };
 const SECTIONS: Section[] = [
-  { key: "home", to: "/", icon: Home, label: "home", match: (p) => p === "/" || p.startsWith("/calendar") },
-  { key: "clients", to: "/clients", icon: Briefcase, label: "clients", match: (p) => p.startsWith("/clients") },
-  { key: "db", to: "/db", icon: Database, label: "databaseShort", match: (p) => p.startsWith("/db") },
-  { key: "docs", to: "/documents", icon: FileText, label: "documents", match: (p) => p.startsWith("/documents") },
-  { key: "finance", to: "/finance", icon: Wallet, label: "finance", match: (p) => p.startsWith("/finance") },
-  { key: "website", to: "/website", icon: Globe, label: "website", match: (p) => p.startsWith("/website") },
+  { key: "home", to: "/", icon: Home, label: "home", match: (p) => p === "/" || p.startsWith("/calendar"), modules: ["home", "calendar"] },
+  { key: "clients", to: "/clients", icon: Briefcase, label: "clients", match: (p) => p.startsWith("/clients"), modules: ["clients"] },
+  { key: "db", to: "/db", icon: Database, label: "databaseShort", match: (p) => p.startsWith("/db"), modules: ["db"] },
+  { key: "docs", to: "/documents", icon: FileText, label: "documents", match: (p) => p.startsWith("/documents"), modules: ["docs"] },
+  { key: "finance", to: "/finance", icon: Wallet, label: "finance", match: (p) => p.startsWith("/finance"), modules: ["finance", "taxes"] },
+  { key: "website", to: "/website", icon: Globe, label: "website", match: (p) => p.startsWith("/website"), modules: ["website", "social"] },
 ];
+
+const initials = (w: WorkspaceInfo) => (w.code === "OTP" ? "OT" : w.code === "MGS" ? "MG" : w.name.replace(/[^A-Za-zÀ-ÿ ]/g, "").split(" ")[0]!.slice(0, 2)).toUpperCase();
+
+/** Workspace picker (one workspace per structure). */
+export function WorkspaceSwitcher({ compact = true }: { compact?: boolean }) {
+  const { list, ws, switchTo } = useWorkspaces();
+  const { tr } = useI18n();
+  if (!ws) return null;
+  return (
+    <Dropdown>
+      <DropdownTrigger
+        className={cn("outline-none focus-visible:ring-2 focus-visible:ring-accent", compact ? "group mb-3 flex flex-col items-center gap-1" : "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-hover")}
+        title={tr({ fr: "Changer d'espace de travail", en: "Switch workspace" })}
+      >
+        <span className="relative grid size-10 shrink-0 place-items-center rounded-xl text-[13px] font-bold text-white shadow-sm transition group-hover:opacity-90" style={{ background: ws.color }}>
+          {ws.code === "OTP" ? <OtopioLogo className="size-6" /> : initials(ws)}
+        </span>
+        {compact ? (
+          <span className="flex max-w-[76px] items-center gap-0.5 text-[10.5px] font-medium leading-tight text-muted group-hover:text-fg">
+            <span className="truncate">{ws.name}</span>
+            <ChevronsUpDown className="size-3 shrink-0" />
+          </span>
+        ) : (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] font-semibold">{ws.name}</span>
+              <span className="block truncate text-[11px] text-muted">{tr({ fr: "Espace de travail", en: "Workspace" })}</span>
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted" />
+          </>
+        )}
+      </DropdownTrigger>
+      <DropdownContent side={compact ? "right" : "bottom"} align="start" className="w-64">
+        <DropdownLabel>{tr({ fr: "Espaces de travail", en: "Workspaces" })}</DropdownLabel>
+        {list.map((w) => (
+          <DropdownItem key={w.id} onSelect={() => switchTo(w.id)}>
+            <span className="grid size-6 shrink-0 place-items-center rounded-md text-[10px] font-bold text-white" style={{ background: w.color }}>
+              {initials(w)}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{w.name}</span>
+              <span className="block truncate text-[11px] text-muted">
+                {w.legalName} · {w.currency}
+              </span>
+            </span>
+            {w.id === ws.id && <Check className="size-4" />}
+          </DropdownItem>
+        ))}
+      </DropdownContent>
+    </Dropdown>
+  );
+}
 
 /** Shell controls usable by pages that render their own header (`header={false}`). */
 type ShellCtx = { openMenu: () => void; openSearch: () => void; toggleSidebar: () => void; sidebarOpen: boolean; hasSidebar: boolean; wide: boolean };
@@ -117,6 +170,8 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
   const navigate = useNavigate();
   const [cmdOpen, setCmdOpen] = useState(false);
   const { dark, setDark } = useTheme();
+  const { enabled } = useWorkspaces();
+  const sections = SECTIONS.filter((s) => s.modules.some(enabled));
   const section = SECTIONS.find((s) => s.match(path));
   const [sidebarOpen, setSidebarOpen] = usePref("erp.sidebar", true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -145,10 +200,8 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
     <ShellContext.Provider value={ctx}>
     <div className="flex h-full bg-surface">
       <aside className="hidden w-[84px] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2/50 px-2 py-4 md:flex">
-        <Link to="/" className="mb-4 grid size-10 place-items-center rounded-xl bg-navy text-sky-brand transition hover:opacity-90" title="Otopio">
-          <OtopioLogo className="size-6" />
-        </Link>
-        {SECTIONS.map((s) => (
+        <WorkspaceSwitcher />
+        {sections.map((s) => (
           <RailLink key={s.key} to={s.to} icon={s.icon} label={t(s.label)} active={section?.key === s.key} />
         ))}
         <div className="mt-auto flex w-full flex-col items-center gap-2">
@@ -203,10 +256,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
           <Dl.Content aria-describedby={undefined} className="fixed inset-y-0 left-0 z-50 flex w-[min(86vw,320px)] flex-col overflow-hidden border-r border-border bg-surface shadow-pop outline-none">
             <Dl.Title className="sr-only">Menu</Dl.Title>
             <div className="flex items-center gap-2 border-b border-border px-3 py-3">
-              <span className="grid size-8 place-items-center rounded-lg bg-navy text-sky-brand">
-                <OtopioLogo className="size-5" />
-              </span>
-              <span className="text-[14px] font-semibold">Otopio ERP</span>
+              <WorkspaceSwitcher compact={false} />
               <Dl.Close className="ml-auto rounded-md p-1.5 text-muted hover:bg-hover hover:text-fg">
                 <X className="size-4" />
               </Dl.Close>
@@ -216,7 +266,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
                 <div className="flex min-h-[40%] flex-col border-b border-border">{sidebar}</div>
               ) : null}
               <nav className={cn("flex flex-col gap-0.5 p-2", sidebar && "md:hidden")}>
-                {[...SECTIONS, { key: "settings", to: "/settings", icon: Settings, label: "settings" as DictKey, match: (p: string) => p.startsWith("/settings") }].map((s) => {
+                {[...sections, { key: "settings", to: "/settings", icon: Settings, label: "settings" as DictKey, match: (p: string) => p.startsWith("/settings"), modules: [] }].map((s) => {
                   const active = s.match(path);
                   return (
                     <Link key={s.key} to={s.to} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium text-muted transition hover:bg-hover hover:text-fg", active && "bg-fg/[.06] text-fg dark:bg-white/10")}>
@@ -322,7 +372,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
         <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
         {/* Mobile tab bar */}
         <nav className="flex shrink-0 items-stretch border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-          {TABS.map((k) => {
+          {TABS.filter((k) => sections.some((x) => x.key === k)).map((k) => {
             const s = SECTIONS.find((x) => x.key === k)!;
             const active = section?.key === k;
             return (

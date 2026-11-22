@@ -1,4 +1,5 @@
 import type { TableKey } from "@erp/shared";
+import { currentWorkspaceId } from "./workspace";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -11,7 +12,7 @@ export async function api<T = unknown>(path: string, init?: RequestInit & { json
   const res = await fetch(`/api${path}`, {
     credentials: "include",
     ...rest,
-    headers: { ...(json !== undefined ? { "content-type": "application/json" } : {}), ...rest.headers },
+    headers: { ...(json !== undefined ? { "content-type": "application/json" } : {}), ...(currentWorkspaceId() ? { "x-workspace": currentWorkspaceId()! } : {}), ...rest.headers },
     body: json !== undefined ? JSON.stringify(json) : rest.body,
   });
   if (res.status === 401 && !path.startsWith("/auth")) {
@@ -20,6 +21,8 @@ export async function api<T = unknown>(path: string, init?: RequestInit & { json
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    // signed in but member of no workspace → client portal
+    if (res.status === 403 && (body as { portal?: boolean }).portal && !location.pathname.startsWith("/portail")) location.href = "/portail";
     throw new ApiError(res.status, (body as { error?: string }).error ?? res.statusText);
   }
   const ct = res.headers.get("content-type") ?? "";

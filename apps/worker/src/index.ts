@@ -8,10 +8,10 @@ import IORedis from "ioredis";
 import { S3Client } from "bun";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { googleConfigured } from "@erp/google";
-import { ensureClientFolders, savePdfToClientFolder, syncDrive } from "./sync/drive";
+import { ensureClientFolderById, savePdfToClientFolder, syncDrive } from "./sync/drive";
 import { MEMBERS, setState } from "./sync/common";
 import { deleteEventInGoogle, patchEventInGoogle, pushEventToGoogle, syncCalendars } from "./sync/calendar";
-import { syncGmail } from "./sync/gmail";
+import { attachMissingReceipts, syncGmail } from "./sync/gmail";
 import { syncPersonalGmail } from "./sync/personal";
 import { qontoConfigured, syncQonto } from "./sync/qonto";
 import { dashboardDigest, summarizeClients, summarizeCommunications } from "./sync/ai";
@@ -43,7 +43,7 @@ async function renderPdf(data: { kind: string; id: string; html: string; organiz
     const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
     let url: string | null = null;
     if (googleConfigured() && data.organizationId && data.fileName) {
-      url = await savePdfToClientFolder(data.organizationId, data.fileName, pdf).catch((e) => {
+      url = await savePdfToClientFolder(data.organizationId, data.fileName, pdf, data.kind).catch((e) => {
         console.warn("[pdf] drive upload failed", (e as Error).message);
         return null;
       });
@@ -86,14 +86,18 @@ const worker = new Worker(
       case "drive-sync":
         return googleConfigured() ? syncDrive() : null;
       case "client-folder":
-        return googleConfigured() ? Object.fromEntries(await ensureClientFolders(job.data.organizationId)) : null;
+        return googleConfigured() ? Object.fromEntries(await ensureClientFolderById(job.data.organizationId)) : null;
       case "calendar-sync":
         if (job.data?.full) for (const m of MEMBERS) await setState(`calendar:${m}:syncToken`, "");
         return googleConfigured() ? syncCalendars() : null;
       case "event-push":
         return googleConfigured() ? (job.data.action === "delete" ? deleteEventInGoogle(job.data.owner, job.data.googleEventId) : job.data.action === "update" ? patchEventInGoogle(job.data.id) : pushEventToGoogle(job.data.id)) : null;
-      case "gmail-sync":
-        return googleConfigured() ? syncGmail() : null;
+      case "gmail-sync": {
+        if (!googleConfigured()) return null;
+        const stats = await syncGmail();
+        const receipts = await attachMissingReceipts().catch(() => 0);
+        return { ...stats, receipts };
+      }
       case "qonto-sync":
         return qontoConfigured() ? syncQonto() : null;
       case "personal-gmail-sync":

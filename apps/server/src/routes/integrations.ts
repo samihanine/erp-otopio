@@ -5,11 +5,14 @@ import type { AppEnv } from "../lib/types";
 import { env, r2Configured } from "../lib/env";
 import { redisOk } from "../lib/queue";
 import { authEnabledProviders } from "../lib/auth";
+import { seal, unseal } from "../lib/drive-access";
+import { wsOf } from "../lib/workspace";
 
 export const integrations = new Hono<AppEnv>();
 
 integrations.get("/status", async (c) => {
-  const entities = await db.select({ id: schema.legalEntity.id, name: schema.legalEntity.name, provider: schema.legalEntity.accountingProvider }).from(schema.legalEntity);
+  const ws = wsOf(c);
+  const entities = await db.select({ id: schema.legalEntity.id, name: schema.legalEntity.name, provider: schema.legalEntity.accountingProvider }).from(schema.legalEntity).where(eq(schema.legalEntity.id, ws.id));
   return c.json({
     google: { connected: authEnabledProviders().google, scope: "Gmail · Drive · Docs" },
     github: { connected: Boolean(env.githubToken), org: env.githubOrg },
@@ -18,7 +21,7 @@ integrations.get("/status", async (c) => {
     redis: { connected: await redisOk() },
     qonto: { connected: env.qonto, entities: entities.filter((e) => e.provider === "qonto") },
     quickbooks: { connected: env.quickbooks, entities: entities.filter((e) => e.provider === "quickbooks") },
-    website: { connected: Boolean(cfHeaders()), domain: "otopio.ca" },
+    website: { connected: Boolean(cfHeaders()), domain: ws.websiteDomain },
   });
 });
 
@@ -145,22 +148,8 @@ const pg = () => ({
   secret: process.env.PERSONAL_GOOGLE_CLIENT_SECRET || env.googleClientSecret,
   redirect: `${env.appUrl.replace(/\/$/, "")}/api/integrations/google-personal/callback`,
 });
-const PERSONAL_SCOPES = ["openid", "email", "https://mail.google.com/", "https://www.googleapis.com/auth/gmail.settings.basic", "https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/calendar"];
+const PERSONAL_SCOPES = ["openid", "email", "https://mail.google.com/", "https://www.googleapis.com/auth/gmail.settings.basic", "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/calendar"];
 
-async function aesKey() {
-  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`personal-google:${env.authSecret}`));
-  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
-}
-async function seal(v: unknown) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await aesKey(), new TextEncoder().encode(JSON.stringify(v))));
-  return Buffer.from(new Uint8Array([...iv, ...ct])).toString("base64");
-}
-async function unseal<T>(s: string): Promise<T> {
-  const b = new Uint8Array(Buffer.from(s, "base64"));
-  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, await aesKey(), b.slice(12));
-  return JSON.parse(new TextDecoder().decode(pt)) as T;
-}
 const stateKey = (k: string) => `personal-google:${k}`;
 async function putState(key: string, value: string) {
   await db.insert(schema.syncState).values({ key, value }).onConflictDoUpdate({ target: schema.syncState.key, set: { value, updatedAt: new Date() } });

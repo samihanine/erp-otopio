@@ -19,6 +19,8 @@ import { ClientsPage, ClientPage } from "./routes/clients";
 import { FilesPage } from "./routes/files";
 import { CalendarPage } from "./routes/calendar";
 import { PrivacyPage, TermsPage } from "./routes/legal";
+import { PortalClientPage, PortalHomePage, PortalLoginPage } from "./routes/portal";
+import { fetchWorkspaces, pickWorkspace } from "./lib/workspace";
 
 try {
   if (localStorage.getItem("erp.theme") === "dark") document.documentElement.classList.add("dark");
@@ -33,11 +35,22 @@ const rootRoute = createRootRoute({ component: () => <Outlet /> });
 const requireAuth = async () => {
   const { data } = await authClient.getSession();
   if (!data) throw redirect({ to: "/login", search: { next: location.pathname + location.search } as never });
+  // team members work inside a workspace; client contacts only have the portal
+  const list = await queryClient.fetchQuery({ queryKey: ["__workspaces"], queryFn: fetchWorkspaces, staleTime: 60_000 });
+  if (!list.length) throw redirect({ to: "/portail/app" });
+  pickWorkspace(list);
+};
+const requirePortalSession = async () => {
+  const { data } = await authClient.getSession();
+  if (!data) throw redirect({ to: "/portail" });
 };
 
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: "/login", component: LoginPage, validateSearch: (s: Record<string, unknown>): { next?: string } => (typeof s.next === "string" ? { next: s.next } : {}) });
 const privacyRoute = createRoute({ getParentRoute: () => rootRoute, path: "/privacy", component: PrivacyPage });
 const termsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/terms", component: TermsPage });
+const portalLoginRoute = createRoute({ getParentRoute: () => rootRoute, path: "/portail", component: PortalLoginPage });
+const portalAppRoute = createRoute({ getParentRoute: () => rootRoute, path: "/portail/app", beforeLoad: requirePortalSession, component: PortalHomePage });
+export const portalClientRoute = createRoute({ getParentRoute: () => rootRoute, path: "/portail/c/$id", beforeLoad: requirePortalSession, component: PortalClientPage });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: "app", beforeLoad: requireAuth, component: () => <Outlet /> });
 
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: "/", component: HomePage });
@@ -67,6 +80,9 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   privacyRoute,
   termsRoute,
+  portalLoginRoute,
+  portalAppRoute,
+  portalClientRoute,
   appRoute.addChildren([homeRoute, dbIndexRoute, dbRoute, recordRoute, docsRoute, docsModelsRoute, clientsRoute, clientRoute, calendarRoute, freeDocRoute, docEditorRoute, financeRoute, websiteRoute, settingsRoute]),
 ]);
 

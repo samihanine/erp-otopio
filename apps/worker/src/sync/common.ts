@@ -21,9 +21,28 @@ export async function log(kind: string, table: string, recordId: string, comment
 
 const host = (u?: string | null) => (u ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] ?? "";
 
-/** Contact directory used to attach emails/events to people and organizations. */
+/* ------------------------------ Workspaces ------------------------------ */
+export type Ws = typeof schema.legalEntity.$inferSelect;
+export const COMPANIES = new Set(["OTP", "MGS"]);
+export async function workspaces() {
+  return db.select().from(schema.legalEntity);
+}
+export async function wsByCode(code: string) {
+  const [w] = await db.select().from(schema.legalEntity).where(eq(schema.legalEntity.code, code));
+  return w ?? null;
+}
+
+/**
+ * Contact directory used to attach emails/events to people and organizations (all workspaces).
+ * A company present in several workspaces matches its Otopio Inc. / Megascale record first (mail on @otopio.ca).
+ */
 export async function directory() {
-  const [orgs, people] = await Promise.all([db.select().from(schema.organization), db.select().from(schema.person)]);
+  const [orgsRaw, peopleRaw, wss] = await Promise.all([db.select().from(schema.organization), db.select().from(schema.person), workspaces()]);
+  const company = new Set(wss.filter((w) => COMPANIES.has(w.code)).map((w) => w.id));
+  // freelance first, companies last → companies win in the maps below
+  const rank = (wsId: string) => (company.has(wsId) ? 1 : 0);
+  const orgs = [...orgsRaw].sort((a, b) => rank(a.workspaceId) - rank(b.workspaceId));
+  const people = [...peopleRaw].sort((a, b) => rank(a.workspaceId) - rank(b.workspaceId));
   const byEmail = new Map<string, typeof people[number]>();
   for (const p of people) if (p.email) byEmail.set(p.email.toLowerCase(), p);
   const byDomain = new Map<string, typeof orgs[number]>();

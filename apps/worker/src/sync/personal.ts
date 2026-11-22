@@ -12,18 +12,18 @@ import { ai, aiEnabled, getState, log, setState } from "./common";
 
 const E = process.env;
 const INVOICE = /\b(facture|invoice|receipt|reçu|justificatif|payment (received|confirmation)|votre paiement|billing statement)\b/i;
-const DEFAULTS: Record<string, string> = { "megascale.technologie@gmail.com": "MGS" };
+const DEFAULTS: Record<string, string> = { "megascale.technologie@gmail.com": "MGS", "sami.hanine22@gmail.com": "SHF", "maissane.t69@gmail.com": "MTF" };
 
 async function key() {
   const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`personal-google:${E.BETTER_AUTH_SECRET ?? ""}`));
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
 }
-async function unseal<T>(s: string): Promise<T> {
+export async function unseal<T>(s: string): Promise<T> {
   const b = new Uint8Array(Buffer.from(s, "base64"));
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, await key(), b.slice(12));
   return JSON.parse(new TextDecoder().decode(pt)) as T;
 }
-async function accessToken(refreshToken: string) {
+export async function accessToken(refreshToken: string) {
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -98,9 +98,9 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     if (!(page = r.nextPageToken)) break;
   }
   const stats = { seen: 0, labelled: 0, billsAttached: 0, billsCreated: 0, aiErrors: 0 };
-  const bills = await db.select().from(schema.transaction).where(and(eq(schema.transaction.legalEntityId, entity.id), eq(schema.transaction.kind, "expense")));
-  const invs = await db.select({ org: schema.transaction.organizationId }).from(schema.transaction).where(and(eq(schema.transaction.legalEntityId, entity.id), eq(schema.transaction.kind, "invoice")));
-  const orgs = await db.select().from(schema.organization);
+  const bills = await db.select().from(schema.transaction).where(and(eq(schema.transaction.workspaceId, entity.id), eq(schema.transaction.kind, "expense")));
+  const invs = await db.select({ org: schema.transaction.organizationId }).from(schema.transaction).where(and(eq(schema.transaction.workspaceId, entity.id), eq(schema.transaction.kind, "invoice")));
+  const orgs = await db.select().from(schema.organization).where(eq(schema.organization.workspaceId, entity.id));
   const clientIds = new Set(invs.map((i) => i.org));
   const GENERIC = /^(gmail|hotmail|outlook|yahoo|icloud|live|free|orange|wanadoo|laposte)\./;
   const clientDomains = new Set(
@@ -150,7 +150,7 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     const name = `${date} — ${x.supplier} — Facture — ${x.number ?? pdfs[0]!.filename}`.replace(/\.pdf$/i, "") + ".pdf";
     const k = `bill/${crypto.randomUUID()}-${name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.-]+/g, "_")}`;
     await s3().write(k, data, { type: "application/pdf" });
-    const [f] = await db.insert(schema.file).values({ key: k, name, size: data.byteLength, mimeType: "application/pdf", table: "transaction" }).returning();
+    const [f] = await db.insert(schema.file).values({ workspaceId: entity.id, key: k, name, size: data.byteLength, mimeType: "application/pdf", table: "transaction" }).returning();
     const url = `${(E.APP_URL ?? "https://erp.otopio.ca").replace(/\/$/, "")}/api/files/${f!.id}`;
     // anti-doublon: attach to the Qonto-imported bill when it is the same expense
     const twin = bills.find((b) => !b.fileUrl && b.currency === (x.currency || b.currency) && x.total != null && Math.abs(Number(b.total) - x.total) < 0.02 && Math.abs(+new Date(b.date ?? date) - +new Date(date)) < 7 * 864e5);
@@ -164,11 +164,11 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     const dup = bills.find((b) => b.externalRef === `gmail:${id}`);
     if (dup) continue;
     const cats = ["software", "hosting", "ai", "subcontracting", "legal", "accounting", "marketing", "office", "travel", "other"];
-    const [org] = await db.select().from(schema.organization).where(eq(schema.organization.name, x.supplier));
-    const supplier = org ?? (await db.insert(schema.organization).values({ name: x.supplier, type: "supplier", status: "active", notes: "Créé automatiquement depuis une facture reçue." }).returning())[0]!;
+    const [org] = await db.select().from(schema.organization).where(and(eq(schema.organization.workspaceId, entity.id), eq(schema.organization.name, x.supplier)));
+    const supplier = org ?? (await db.insert(schema.organization).values({ workspaceId: entity.id, defaultEntityId: entity.id, name: x.supplier, type: "supplier", status: "active", notes: "Créé automatiquement depuis une facture reçue." }).returning())[0]!;
     const [b] = await db
       .insert(schema.transaction)
-      .values({ kind: "expense", side: "debit", label: `${x.supplier}${x.number ? ` — ${x.number}` : ""}`, number: x.number, legalEntityId: entity.id, organizationId: supplier.id, category: (cats.includes(x.category) ? x.category : "other") as never, status: "to_pay", date, currency: x.currency || entity.currency, total: x.total ?? 0, subtotal: (x.total ?? 0) - (x.tax ?? 0), taxTotal: x.tax ?? 0, fileUrl: url, externalRef: `gmail:${id}`, notes: `Détectée automatiquement dans ${email} (« ${subject} »).` })
+      .values({ kind: "expense", side: "debit", workspaceId: entity.id, label: `${x.supplier}${x.number ? ` — ${x.number}` : ""}`, number: x.number, legalEntityId: entity.id, organizationId: supplier.id, category: (cats.includes(x.category) ? x.category : "other") as never, status: "to_pay", date, currency: x.currency || entity.currency, total: x.total ?? 0, subtotal: (x.total ?? 0) - (x.tax ?? 0), taxTotal: x.tax ?? 0, fileUrl: url, externalRef: `gmail:${id}`, notes: `Détectée automatiquement dans ${email} (« ${subject} »).` })
       .returning({ id: schema.transaction.id });
     bills.push({ id: b!.id, fileUrl: url, externalRef: `gmail:${id}` } as never);
     stats.billsCreated++;

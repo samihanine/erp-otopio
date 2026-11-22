@@ -1,3 +1,4 @@
+import { useWorkspaces } from "@/lib/workspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Lock, Plus, RefreshCw, Repeat, Video } from "lucide-react";
@@ -33,6 +34,7 @@ const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 const HOUR_PX = 48;
 
 export function CalendarPage() {
+  const { enabled } = useWorkspaces();
   const { tr, locale } = useI18n();
   const navigate = useNavigate();
   const [view, setView] = useState<"week" | "month" | "list">("month");
@@ -87,7 +89,7 @@ export function CalendarPage() {
   return (
     <AppShell
       title={tr({ fr: "Accueil", en: "Home" })}
-      tabs={homeTabs(tr, "calendar")}
+      tabs={homeTabs(tr, "calendar", enabled)}
       actions={
         <div className="flex items-center gap-2">
           <Button size="md" variant="ghost" onClick={() => api("/ws/sync/calendar-sync", { method: "POST" }).then(() => toast.success(tr({ fr: "Synchronisation lancée", en: "Sync started" })))}>

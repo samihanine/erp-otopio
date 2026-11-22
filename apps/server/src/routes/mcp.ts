@@ -6,11 +6,12 @@
  *  - Read-only tools: search, fetch, query tables, finance, Drive documents, Gmail, Calendar
  */
 import { Hono, type Context } from "hono";
-import { and, eq, gt, ilike, or, sql } from "drizzle-orm";
+import { and, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, schema } from "@erp/db";
 import { TABLES, TABLE_KEYS, type TableKey } from "@erp/shared";
 import { calendar, drive, FOLDER, gmail, googleConfigured, header, textBody, gfetch, SCOPES } from "@erp/google";
 import { auth } from "../lib/auth";
+import { accessibleWorkspaces } from "../lib/workspace";
 import { env } from "../lib/env";
 import { buildOrder, buildWhere, columns, isTableKey, labelExpr, resolveRefs, TABLE_MAP } from "../lib/data";
 
@@ -168,13 +169,24 @@ const str = (description: string) => ({ type: "string", description });
 const tableEnum = { type: "string", enum: TABLE_KEYS, description: "Table ERP" };
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
-async function erpSearch(q: string, limit = 5) {
+/** ids of the workspaces the MCP user can read */
+async function wsIds(email: string) {
+  const ids = (await accessibleWorkspaces(email)).map((w) => w.id);
+  return ids.length ? ids : ["00000000-0000-0000-0000-000000000000"];
+}
+const wsCond = (k: TableKey, ids: string[]) => {
+  const cols = columns(k);
+  const col = cols.workspaceId ?? (k === "legal_entity" ? cols.id : undefined);
+  return col ? inArray(col, ids) : undefined;
+};
+
+async function erpSearch(q: string, ids: string[], limit = 5) {
   const out: { id: string; title: string; table: TableKey }[] = [];
   for (const k of TABLE_KEYS) {
     const cols = columns(k);
     const conds = TABLES[k].searchFields.map((f) => cols[f]).filter(Boolean).map((col) => ilike(col!, `%${q}%`));
     if (!conds.length) continue;
-    const rows = await db.select({ id: cols.id!, label: labelExpr(k) }).from(TABLE_MAP[k]).where(or(...conds)).limit(limit);
+    const rows = await db.select({ id: cols.id!, label: labelExpr(k) }).from(TABLE_MAP[k]).where(and(wsCond(k, ids), or(...conds))).limit(limit);
     out.push(...rows.map((r) => ({ id: `erp:${k}:${r.id}`, title: `${TABLES[k].singular.fr} — ${r.label}`, table: k })));
   }
   return out;
@@ -208,9 +220,9 @@ async function driveText(fileId: string) {
   return { id: `drive:${f.id}`, title: f.name, url: f.webViewLink, text: text.slice(0, 60_000), metadata: { mimeType: f.mimeType, modified: f.modifiedTime } };
 }
 
-async function recordFull(table: TableKey, id: string) {
+async function recordFull(table: TableKey, id: string, ids: string[]) {
   const cols = columns(table);
-  const [row] = await db.select().from(TABLE_MAP[table]).where(eq(cols.id!, id));
+  const [row] = await db.select().from(TABLE_MAP[table]).where(and(eq(cols.id!, id), wsCond(table, ids)));
   if (!row) return null;
   const refs = await resolveRefs(table, [row as Record<string, unknown>]);
   const related: Record<string, unknown[]> = {};
@@ -219,7 +231,7 @@ async function recordFull(table: TableKey, id: string) {
       if (f.type === "relation" && f.relation === table) {
         const col = columns(t.key)[f.key];
         if (!col) continue;
-        const rows = await db.select({ id: columns(t.key).id!, label: labelExpr(t.key) }).from(TABLE_MAP[t.key]).where(eq(col, id)).limit(30);
+        const rows = await db.select({ id: columns(t.key).id!, label: labelExpr(t.key) }).from(TABLE_MAP[t.key]).where(and(eq(col, id), wsCond(t.key, ids))).limit(30);
         if (rows.length) related[`${t.key}.${f.key}`] = rows;
       }
   return { row, refs, related };
@@ -231,8 +243,8 @@ const TOOLS: Tool[] = [
     title: "Recherche globale",
     description: "Recherche dans toutes les données d'Otopio : ERP (clients, contacts, projets, tâches, factures, devis, dépenses, communications…) et documents des Drive partagés. Retourne des identifiants à passer à `fetch`.",
     inputSchema: { type: "object", properties: { query: str("Texte recherché") }, required: ["query"] },
-    run: async ({ query }) => {
-      const [erp, docs] = await Promise.all([erpSearch(query), driveSearch(query, 10).catch(() => [])]);
+    run: async ({ query }, user) => {
+      const [erp, docs] = await Promise.all([erpSearch(query, await wsIds(user.email)), driveSearch(query, 10).catch(() => [])]);
       return { results: [...erp.map((r) => ({ id: r.id, title: r.title, url: `${ISSUER()}/db/${r.table}/${r.id.split(":")[2]}` })), ...docs.map((d) => ({ id: d.id, title: `Document — ${d.title}`, url: d.url }))] };
     },
   },
@@ -241,14 +253,17 @@ const TOOLS: Tool[] = [
     title: "Lire un élément",
     description: "Retourne le contenu complet d'un résultat de `search` : fiche ERP avec ses éléments liés (`erp:<table>:<id>`), texte d'un document Drive (`drive:<fileId>`) ou fil de courriels (`gmail:<boîte>:<threadId>`).",
     inputSchema: { type: "object", properties: { id: str("Identifiant renvoyé par search") }, required: ["id"] },
-    run: async ({ id }) => {
+    run: async ({ id }, user) => {
       const [kind, a, b] = String(id).split(":");
       if (kind === "erp" && isTableKey(a!)) {
-        const r = await recordFull(a, b!);
+        const r = await recordFull(a, b!, await wsIds(user.email));
         return { id, title: `${TABLES[a].singular.fr}`, text: JSON.stringify(r, null, 1), url: `${ISSUER()}/db/${a}/${b}` };
       }
       if (kind === "drive") return driveText(a!);
-      if (kind === "gmail") return readThread(a!, b!);
+      if (kind === "gmail") {
+        if (!(await mailboxesOf(user.email)).includes(a!)) throw new Error("Boîte non accessible");
+        return readThread(a!, b!);
+      }
       throw new Error("Identifiant inconnu");
     },
   },
@@ -280,12 +295,12 @@ const TOOLS: Tool[] = [
       },
       required: ["table"],
     },
-    run: async ({ table, search, filters = [], sorts = [], limit = 50 }) => {
+    run: async ({ table, search, filters = [], sorts = [], limit = 50 }, user) => {
       if (!isTableKey(table)) throw new Error("Table inconnue");
       const rows = await db
         .select()
         .from(TABLE_MAP[table])
-        .where(buildWhere(table, filters, "and", search))
+        .where(and(wsCond(table, await wsIds(user.email)), buildWhere(table, filters, "and", search)))
         .orderBy(...buildOrder(table, sorts))
         .limit(Math.min(Number(limit) || 50, 200));
       const refs = await resolveRefs(table, rows as Record<string, unknown>[]);
@@ -303,20 +318,18 @@ const TOOLS: Tool[] = [
     title: "Fiche complète",
     description: "Retourne un enregistrement ERP et tous les éléments qui lui sont liés (ex. un client avec ses contacts, projets, factures, communications).",
     inputSchema: { type: "object", properties: { table: tableEnum, id: str("UUID") }, required: ["table", "id"] },
-    run: async ({ table, id }) => (isTableKey(table) ? recordFull(table, id) : null),
+    run: async ({ table, id }, user) => (isTableKey(table) ? recordFull(table, id, await wsIds(user.email)) : null),
   },
   {
     name: "finance_summary",
     title: "Synthèse financière",
-    description: "Chiffre d'affaires, encaissements, montants à encaisser et en retard, dépenses, marge, répartition mensuelle et par client, et points de rapprochement, pour une année et une structure (Megascale FR / Otopio Inc. CA / toutes consolidées en CAD).",
-    inputSchema: { type: "object", properties: { year: { type: "number" }, entity: str("all | MGS | OTP") } },
-    run: async ({ year, entity = "all" }) => {
-      let ent = "all";
-      if (entity && entity !== "all") {
-        const [e] = await db.select({ id: schema.legalEntity.id }).from(schema.legalEntity).where(or(eq(schema.legalEntity.code, String(entity).toUpperCase()), eq(schema.legalEntity.id, String(entity))));
-        ent = e?.id ?? "all";
-      }
-      const res = await fetch(`http://localhost:${env.port}/api/finance/summary?year=${year ?? new Date().getFullYear()}&entity=${ent}`, { headers: { "x-internal": internalKey } });
+    description: "Chiffre d'affaires, encaissements, montants à encaisser et en retard, dépenses, marge, répartition mensuelle et par client, et points de rapprochement, pour une année et un espace de travail (OTP = Otopio Inc. CA, MGS = Megascale FR, SHF = Sami Freelance, MTF = Maïssane Freelance).",
+    inputSchema: { type: "object", properties: { year: { type: "number" }, workspace: str("OTP | MGS | SHF | MTF (défaut OTP)") } },
+    run: async ({ year, workspace = "OTP", entity }, user) => {
+      const code = String(entity && entity !== "all" ? entity : workspace).toUpperCase();
+      const ws = (await accessibleWorkspaces(user.email)).find((w) => w.code === code);
+      if (!ws) throw new Error("Espace de travail non accessible");
+      const res = await fetch(`http://localhost:${env.port}/api/finance/summary?year=${year ?? new Date().getFullYear()}`, { headers: { "x-internal": internalKey, "x-workspace": ws.id } });
       return res.json();
     },
   },
@@ -343,8 +356,9 @@ const TOOLS: Tool[] = [
     title: "Chercher des courriels",
     description: `Recherche Gmail (syntaxe Gmail : from:, to:, subject:, after:YYYY/MM/DD, label:…) dans une boîte (${MAILBOXES.join(", ")}) ou toutes. Retourne des ids \`gmail:<boîte>:<threadId>\` à lire avec \`fetch\`.`,
     inputSchema: { type: "object", properties: { query: str("Requête Gmail"), mailbox: str("Boîte (optionnel, toutes par défaut)"), limit: { type: "number" } }, required: ["query"] },
-    run: async ({ query, mailbox, limit = 10 }) => {
-      const boxes = mailbox ? [mailbox] : MAILBOXES;
+    run: async ({ query, mailbox, limit = 10 }, user) => {
+      const allowed = await mailboxesOf(user.email);
+      const boxes = mailbox ? [mailbox].filter((m) => allowed.includes(m)) : allowed;
       const out: unknown[] = [];
       for (const box of boxes) {
         const ids = (await gmail.listThreads(box, query, limit)).slice(0, limit);
@@ -362,11 +376,13 @@ const TOOLS: Tool[] = [
     title: "Agenda",
     description: "Événements des agendas de l'équipe entre deux dates (défaut : 7 derniers jours → 14 prochains jours). Filtre optionnel par personne (email).",
     inputSchema: { type: "object", properties: { from: str("YYYY-MM-DD"), to: str("YYYY-MM-DD"), person: str("email @otopio.ca (optionnel)") } },
-    run: async ({ from, to, person }) => {
+    run: async ({ from, to, person }, user) => {
+      const allowed = await mailboxesOf(user.email);
+      if (person && !allowed.includes(person)) throw new Error("Agenda non accessible");
       const timeMin = new Date(from ?? isoDay(new Date(Date.now() - 7 * 864e5))).toISOString();
       const timeMax = new Date(to ?? isoDay(new Date(Date.now() + 14 * 864e5))).toISOString();
       const out: unknown[] = [];
-      for (const u of person ? [person] : MAILBOXES) {
+      for (const u of person ? [person] : allowed) {
         const { items } = await calendar.events(u, "primary", { timeMin, timeMax }).catch(() => ({ items: [] }));
         for (const e of items) {
           if (e.visibility === "private") {
@@ -380,6 +396,12 @@ const TOOLS: Tool[] = [
     },
   },
 ];
+
+/** @otopio.ca mailboxes of the workspaces the user can open (personal Gmail accounts are not reachable here) */
+async function mailboxesOf(email: string) {
+  const ws = await accessibleWorkspaces(email);
+  return [...new Set(ws.flatMap((w) => w.mailboxes))].filter((m) => MAILBOXES.includes(m));
+}
 
 async function readThread(box: string, threadId: string) {
   const t = await gmail.thread(box, threadId, "full");

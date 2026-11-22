@@ -1,3 +1,4 @@
+import { wsHeaders } from "@/lib/workspace";
 /** Website CMS editors: image upload (Cloudflare R2), page sections and translations. */
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,7 +19,7 @@ export async function uploadPublicImage(file: File, table: string, recordId?: st
   fd.set("table", table);
   fd.set("public", "1");
   if (recordId) fd.set("recordId", recordId);
-  const res = await fetch("/api/files", { method: "POST", body: fd, credentials: "include" });
+  const res = await fetch("/api/files", { method: "POST", body: fd, credentials: "include", headers: wsHeaders() });
   const j = (await res.json()) as { url?: string; error?: string };
   if (!res.ok || !j.url) throw new Error(j.error ?? "Upload failed");
   return j.url;

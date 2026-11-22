@@ -12,6 +12,7 @@ import { OptionBadge, Segmented, Skeleton } from "@/components/ui/misc";
 import { RelationChip } from "@/components/database/fields";
 import type { FinanceSummary } from "./finance";
 import { DigestCard } from "./automation";
+import { useWorkspaces, type ModuleKey } from "@/lib/workspace";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -25,12 +26,13 @@ function Stat({ label, value, to, sub }: { label: string; value: string | number
   );
 }
 
-/** Accueil sub-tabs: general dashboard + team calendar */
-export function homeTabs(tr: (x: { fr: string; en: string }) => string, active: "general" | "calendar") {
-  return [
+/** Accueil sub-tabs: general dashboard + team calendar (when the module is on) */
+export function homeTabs(tr: (x: { fr: string; en: string }) => string, active: "general" | "calendar", enabled: (m: ModuleKey) => boolean = () => true) {
+  const tabs = [
     { key: "general", label: tr({ fr: "Général", en: "Overview" }), to: "/", active: active === "general" },
-    { key: "calendar", label: tr({ fr: "Calendrier", en: "Calendar" }), to: "/calendar", active: active === "calendar" },
+    ...(enabled("calendar") ? [{ key: "calendar", label: tr({ fr: "Calendrier", en: "Calendar" }), to: "/calendar", active: active === "calendar" }] : []),
   ];
+  return tabs.length > 1 ? tabs : [];
 }
 
 export function HomePage() {
@@ -38,6 +40,7 @@ export function HomePage() {
   const { data: session } = useSession();
   const navigate = useNavigate();
   const [scope, setScope] = useState<"mine" | "all">("mine");
+  const { enabled } = useWorkspaces();
   const email = session?.user.email?.toLowerCase();
 
   const { data: people } = useList("person", { filters: email ? [{ field: "email", op: "eq", value: email }] : [] }, Boolean(email));
@@ -59,7 +62,7 @@ export function HomePage() {
   const hour = new Date().getHours();
 
   return (
-    <AppShell title={t("home")} tabs={homeTabs(tr, "general")}>
+    <AppShell title={t("home")} tabs={homeTabs(tr, "general", enabled)}>
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 pb-20 pt-6 md:px-8 md:pt-10">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -84,7 +87,7 @@ export function HomePage() {
             <Stat label={tr({ fr: "Tâches ouvertes", en: "Open tasks" })} value={isLoading ? "…" : open.length} sub={late ? `${late} ${tr({ fr: "en retard", en: "late" })}` : undefined} to="/db/task" />
             <Stat label={tr({ fr: "Projets actifs", en: "Active projects" })} value={projects?.total ?? "…"} to="/db/project" />
             <Stat label={tr({ fr: "Tickets ouverts", en: "Open tickets" })} value={tickets?.total ?? "…"} to="/db/ticket" />
-            <Stat label={t("outstanding")} value={fin ? formatMoney(fin.kpis.outstanding, "CAD", locale) : "…"} sub={t("consolidated")} to="/finance" />
+            <Stat label={t("outstanding")} value={fin ? formatMoney(fin.kpis.outstanding, fin.currency ?? "CAD", locale) : "…"} sub={tr({ fr: "Factures envoyées non payées", en: "Sent invoices not yet paid" })} to="/finance" />
           </div>
 
           <DigestCard />

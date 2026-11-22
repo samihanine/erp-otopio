@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OtopioLogo } from "@/components/layout/logo";
+import { MagicLinkForm } from "./portal";
 
 export function LoginPage() {
   const { tr } = useI18n();
@@ -17,10 +18,11 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"password" | "magic">("password");
   const { data: providers } = useQuery({ queryKey: ["providers"], queryFn: () => api<{ google: boolean; password: boolean }>("/auth/providers") });
   const err = new URLSearchParams(location.search).get("error");
   useEffect(() => {
-    if (err) setError(tr({ fr: "Connexion refusée : seuls les comptes @otopio.ca sont autorisés.", en: "Sign-in refused: only @otopio.ca accounts are allowed." }));
+    if (err) setError(tr({ fr: "Connexion refusée : cette adresse n'a accès à aucun espace de travail.", en: "Sign-in refused: this address has no workspace access." }));
   }, [err, tr]);
 
   const submit = async (e: React.FormEvent) => {
@@ -48,17 +50,26 @@ export function LoginPage() {
           <p className="mt-2 text-[13px] text-[#a9bbe6]">{tr({ fr: "ERP — clients, projets, finances & contenus", en: "ERP — clients, projects, finance & content" })}</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-surface">
-          {providers?.google && (
+          {providers?.google && mode === "password" && (
             <>
               <Button size="lg" variant="secondary" className="w-full" onClick={() => signIn.social({ provider: "google", callbackURL: next ?? "/", errorCallbackURL: "/login" })}>
                 <svg viewBox="0 0 24 24" className="size-4"><path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.8-5.5 3.8-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.2 14.6 2.2 12 2.2 6.6 2.2 2.2 6.6 2.2 12s4.4 9.8 9.8 9.8c5.7 0 9.4-4 9.4-9.6 0-.6-.1-1.1-.2-1.6H12z"/></svg>
-                {tr({ fr: "Continuer avec Google Workspace", en: "Continue with Google Workspace" })}
+                {tr({ fr: "Continuer avec Google", en: "Continue with Google" })}
               </Button>
               <div className="my-4 flex items-center gap-3 text-xs text-subtle">
                 <span className="h-px flex-1 bg-border" /> {tr({ fr: "ou", en: "or" })} <span className="h-px flex-1 bg-border" />
               </div>
             </>
           )}
+          {mode === "magic" ? (
+            <>
+              <MagicLinkForm callbackURL={next ?? "/"} />
+              <button type="button" onClick={() => setMode("password")} className="mt-4 block w-full text-center text-xs text-muted hover:text-fg">
+                {tr({ fr: "Se connecter avec un mot de passe", en: "Sign in with a password" })}
+              </button>
+            </>
+          ) : (
+          <>
           <form onSubmit={submit} className="space-y-3">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted">{tr({ fr: "Courriel", en: "Email" })}</span>
@@ -73,8 +84,16 @@ export function LoginPage() {
               {loading ? "…" : tr({ fr: "Se connecter", en: "Sign in" })} <ArrowRight />
             </Button>
           </form>
+          <button type="button" onClick={() => setMode("magic")} className="mt-3 block w-full text-center text-xs text-muted hover:text-fg">
+            {tr({ fr: "Recevoir un lien de connexion par courriel", en: "Email me a sign-in link" })}
+          </button>
+          </>
+          )}
           <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-subtle">
-            <Lock className="size-3" /> {tr({ fr: "Accès réservé à l'équipe Otopio", en: "Restricted to the Otopio team" })}
+            <Lock className="size-3" /> {tr({ fr: "Accès réservé à l'équipe —", en: "Team only —" })}{" "}
+            <a href="/portail" className="underline hover:text-fg">
+              {tr({ fr: "espace client", en: "client portal" })}
+            </a>
           </p>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { S3Client } from "bun";
 import { db, schema } from "@erp/db";
 import type { AppEnv } from "../lib/types";
 import { env, r2Configured } from "../lib/env";
+import { wsOf } from "../lib/workspace";
 
 export const files = new Hono<AppEnv>();
 
@@ -26,15 +27,17 @@ files.post("/", async (c) => {
   await client().write(key, f, { type: f.type });
   const [row] = await db
     .insert(schema.file)
-    .values({ key, name: f.name, size: f.size, mimeType: f.type || "application/octet-stream", table, recordId, uploadedBy: c.get("user")?.id })
+    .values({ workspaceId: wsOf(c).id, key, name: f.name, size: f.size, mimeType: f.type || "application/octet-stream", table, recordId, uploadedBy: c.get("user")?.id })
     .returning();
   const url = env.r2.publicUrl ? `${env.r2.publicUrl.replace(/\/$/, "")}/${key}` : `/api/files/${row!.id}`;
   return c.json({ ...row, url }, 201);
 });
 
 files.get("/:id", async (c) => {
-  const { eq } = await import("drizzle-orm");
-  const [row] = await db.select().from(schema.file).where(eq(schema.file.id, c.req.param("id")));
+  const { and, eq, inArray, or, isNull } = await import("drizzle-orm");
+  // plain links (no workspace header): any workspace the user can open
+  const ids = (c.get("workspaces") ?? []).map((w) => w.id);
+  const [row] = await db.select().from(schema.file).where(and(eq(schema.file.id, c.req.param("id")), or(isNull(schema.file.workspaceId), ids.length ? inArray(schema.file.workspaceId, ids) : eq(schema.file.workspaceId, wsOf(c).id))));
   if (!row || !r2Configured()) return c.json({ error: "Not found" }, 404);
   return c.redirect(client().presign(row.key, { expiresIn: 600 }));
 });

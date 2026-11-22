@@ -1,3 +1,4 @@
+import { useWorkspaces } from "@/lib/workspace";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -33,7 +34,9 @@ const flag = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(.
 
 export function WebsitePage() {
   const { tr, t, locale } = useI18n();
-  const [tab, setTab] = usePrefValue<"site" | "social">("marketing:tab", "site");
+  const [tab0, setTab] = usePrefValue<"site" | "social">("marketing:tab", "site");
+  const { enabled } = useWorkspaces();
+  const tab = !enabled("social") ? "site" : !enabled("website") ? "social" : tab0;
   const [days, setDays] = useState<"7" | "30" | "90">("30");
   const [zone, setZone] = useState("all");
   const { data, isFetching } = useQuery({ queryKey: ["website", days, zone], queryFn: () => api<Analytics>(`/integrations/website/analytics?days=${days}&zone=${zone}`), placeholderData: (p) => p });
@@ -46,10 +49,14 @@ export function WebsitePage() {
   return (
     <AppShell
       title={t("website")}
-      tabs={[
-        { key: "site", label: tr({ fr: "Site web", en: "Website" }), onClick: () => setTab("site"), active: tab === "site" },
-        { key: "social", label: tr({ fr: "Réseaux sociaux", en: "Social media" }), onClick: () => setTab("social"), active: tab === "social" },
-      ]}
+      tabs={
+        enabled("website") && enabled("social")
+          ? [
+              { key: "site", label: tr({ fr: "Site web", en: "Website" }), onClick: () => setTab("site"), active: tab === "site" },
+              { key: "social", label: tr({ fr: "Réseaux sociaux", en: "Social media" }), onClick: () => setTab("social"), active: tab === "social" },
+            ]
+          : []
+      }
     >
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 md:px-8 md:pt-8">

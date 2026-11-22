@@ -3,16 +3,18 @@
  *  - new threads with known contacts → communications
  *  - supplier invoices (PDF + invoice keywords) → bills, PDF stored in Administratif / Dépenses / <entity>
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@erp/db";
 import { addresses, attachmentsOf, drive, FOLDER, gmail, header, textBody, type GmailMessage } from "@erp/google";
-import { ADMIN, ai, aiEnabled, AUTOMATED, directory, getState, log, MEMBERS, setState } from "./common";
-import { ADMIN_DRIVE, sharedDriveIds } from "./drive";
+import { ADMIN, ai, aiEnabled, AUTOMATED, directory, getState, log, MEMBERS, setState, wsByCode } from "./common";
+import { expensesFolder } from "./drive";
 
 const INVOICE = /\b(facture|invoice|receipt|reçu|payment (received|confirmation)|votre paiement|billing statement)\b/i;
 
 export async function syncGmail() {
   const dir = await directory();
+  const otp = await wsByCode("OTP");
+  if (!otp) return null;
   const stats: Record<string, number> = { communications: 0, bills: 0 };
   for (const box of MEMBERS) {
     const key = `gmail:${box}:historyId`;
@@ -37,7 +39,7 @@ export async function syncGmail() {
       threadIds = new Set(recent.map((r) => r.threadId));
       msgIds = recent;
     }
-    for (const tid of threadIds) if (await threadToCommunication(box, tid, dir)) stats.communications!++;
+    for (const tid of threadIds) if (await threadToCommunication(box, tid, dir, otp.id)) stats.communications!++;
     for (const m of msgIds) if (await detectInvoice(box, m.id, dir)) stats.bills!++;
     await setState(key, profile.historyId);
   }
@@ -46,7 +48,7 @@ export async function syncGmail() {
 
 type Dir = Awaited<ReturnType<typeof directory>>;
 
-async function threadToCommunication(box: string, tid: string, dir: Dir) {
+async function threadToCommunication(box: string, tid: string, dir: Dir, defaultWs: string) {
   const t = await gmail.thread(box, tid).catch(() => null);
   if (!t?.messages?.length) return false;
   const last = t.messages.at(-1)!;
@@ -66,6 +68,8 @@ async function threadToCommunication(box: string, tid: string, dir: Dir) {
   const subject = (header(t.messages[0]!, "Subject") || "(sans objet)").replace(/^((re|tr|fwd?)\s*:\s*)+/i, "");
   const atts = t.messages.flatMap((x) => attachmentsOf(x).map((a) => a.filename)).filter(Boolean);
   const values = {
+    // mail on @otopio.ca goes to the workspace of the company (Otopio Inc., Megascale or a freelance one)
+    workspaceId: m.org?.workspaceId ?? m.person?.workspaceId ?? defaultWs,
     subject,
     type: "email" as const,
     direction: (sender.endsWith("@otopio.ca") ? "outbound" : "inbound") as "outbound" | "inbound",
@@ -90,17 +94,6 @@ async function threadToCommunication(box: string, tid: string, dir: Dir) {
   return Boolean(c);
 }
 
-async function adminFolder(entityCode: string) {
-  const ids = await sharedDriveIds();
-  const root = ids[ADMIN_DRIVE];
-  if (!root) return null;
-  const entity = entityCode === "MGS" ? "Megascale" : entityCode === "OTP" ? "Otopio Inc." : "Freelance";
-  const find = async (parent: string, name: string) =>
-    (await drive.list(ADMIN, `'${parent}' in parents and name='${name}' and mimeType='${FOLDER}' and trashed=false`, { driveId: root }))[0]?.id ?? (await drive.createFolder(ADMIN, name, parent)).id;
-  // Administratif / Dépenses / <structure>
-  return find(await find(root, "Dépenses"), entity);
-}
-
 async function detectInvoice(box: string, msgId: string, dir: Dir) {
   const [dup] = await db.select({ id: schema.transaction.id }).from(schema.transaction).where(eq(schema.transaction.externalRef, `gmail:${msgId}`));
   if (dup) return false;
@@ -113,7 +106,7 @@ async function detectInvoice(box: string, msgId: string, dir: Dir) {
   if (!pdfs.length || !INVOICE.test(`${subject} ${m.snippet} ${pdfs.map((p) => p.filename).join(" ")}`)) return false;
   // client invoices we send are not supplier bills
   const mm = dir.match([from]);
-  if (mm.org && mm.org.type === "client") return false;
+  if (mm.org && mm.org.type === "client" && dir.orgs.every((o) => o.type === "client" || o.name !== mm.org!.name)) return false;
   if (!aiEnabled()) return false;
   const body = textBody(m).slice(0, 6000);
   const x = await ai<{ isSupplierInvoice: boolean; supplier: string; number: string | null; date: string | null; total: number | null; subtotal: number | null; tax: number | null; currency: string; paid: boolean; entity: "OTP" | "MGS"; category: string }>(
@@ -125,21 +118,21 @@ async function detectInvoice(box: string, msgId: string, dir: Dir) {
   if (!x.isSupplierInvoice) return false;
   const [entity] = await db.select().from(schema.legalEntity).where(eq(schema.legalEntity.code, x.entity === "MGS" ? "MGS" : "OTP"));
   if (!entity) return false;
-  let supplier = dir.orgs.find((o) => o.name.toLowerCase() === x.supplier.toLowerCase()) ?? (mm.org && mm.org.type !== "client" ? mm.org : null);
+  let supplier = dir.orgs.find((o) => o.workspaceId === entity.id && o.name.toLowerCase() === x.supplier.toLowerCase()) ?? (mm.org && mm.org.type !== "client" && mm.org.workspaceId === entity.id ? mm.org : null);
   if (!supplier) {
-    [supplier] = await db.insert(schema.organization).values({ name: x.supplier, type: "supplier", status: "active", email: from, notes: "Créé automatiquement depuis une facture reçue." }).returning();
+    [supplier] = await db.insert(schema.organization).values({ workspaceId: entity.id, defaultEntityId: entity.id, name: x.supplier, type: "supplier", status: "active", email: from, notes: "Créé automatiquement depuis une facture reçue." }).returning();
     dir.orgs.push(supplier!);
   }
   const date = x.date ?? new Date(Number(m.internalDate)).toISOString().slice(0, 10);
   // store PDF in Admin drive
   let fileUrl: string | null = null;
   let driveFileId: string | null = null;
-  const folder = await adminFolder(entity.code);
-  if (folder) {
+  const target = await expensesFolder(entity).catch(() => null);
+  if (target) {
     const a = pdfs[0]!;
     const data = await gmail.attachment(box, msgId, a.attachmentId);
     const name = `${date} — ${x.supplier} — Facture — ${x.number ?? a.filename.replace(/\.pdf$/i, "")}.pdf`.replace(/[\/]/g, "-");
-    const f = await drive.upload(ADMIN, name, folder, new Uint8Array(Buffer.from(data.data, "base64url")), "application/pdf");
+    const f = await drive.upload(target.subject, name, target.folderId, new Uint8Array(Buffer.from(data.data, "base64url")), "application/pdf");
     fileUrl = f.webViewLink ?? null;
     driveFileId = f.id;
   }
@@ -149,6 +142,7 @@ async function detectInvoice(box: string, msgId: string, dir: Dir) {
     .values({
       kind: "expense",
       side: "debit",
+      workspaceId: entity.id,
       label: `${x.supplier}${x.number ? ` — ${x.number}` : ""}`,
       number: x.number,
       legalEntityId: entity.id,
@@ -169,4 +163,35 @@ async function detectInvoice(box: string, msgId: string, dir: Dir) {
     .returning({ id: schema.transaction.id });
   await log("bill-detected", "transaction", b!.id, `Facture ${x.supplier} ${x.total ?? "?"} ${x.currency} détectée (${box}) — PDF rangé dans le Drive admin`, { deleteRecord: { table: "transaction", id: b!.id }, trashDriveFile: driveFileId });
   return true;
+}
+
+/**
+ * Receipts imported without their PDF (e.g. Maïssane's Anthropic receipts added by the workspace migration):
+ * fetch the PDF from the mailbox named in the notes and file it in Administratif › Dépenses of the workspace.
+ */
+export async function attachMissingReceipts() {
+  const rows = await db
+    .select()
+    .from(schema.transaction)
+    .where(sql`${schema.transaction.kind} = 'expense' and ${schema.transaction.externalRef} like 'gmail:%' and ${schema.transaction.fileUrl} is null and ${schema.transaction.notes} ~ '[a-z.]+@otopio\\.ca'`);
+  let n = 0;
+  for (const t of rows) {
+    const box = t.notes?.match(/([a-z.]+@otopio\.ca)/)?.[1];
+    const msgId = t.externalRef!.slice(6);
+    if (!box) continue;
+    const m = await gmail.message(box, msgId).catch(() => null);
+    if (!m) continue;
+    const pdfs = attachmentsOf(m).filter((a) => /pdf$/i.test(a.mimeType) || /\.pdf$/i.test(a.filename));
+    const a = pdfs.find((p) => /invoice|facture/i.test(p.filename)) ?? pdfs[0];
+    if (!a) continue;
+    const [ws] = await db.select().from(schema.legalEntity).where(eq(schema.legalEntity.id, t.workspaceId));
+    const target = ws ? await expensesFolder(ws).catch(() => null) : null;
+    if (!target) continue;
+    const data = await gmail.attachment(box, msgId, a.attachmentId);
+    const name = `${t.date} — ${t.label.split(" — ")[0]} — Facture — ${t.number ?? a.filename.replace(/\.pdf$/i, "")}.pdf`.replace(/[\/]/g, "-");
+    const f = await drive.upload(target.subject, name, target.folderId, new Uint8Array(Buffer.from(data.data, "base64url")), "application/pdf");
+    await db.update(schema.transaction).set({ fileUrl: f.webViewLink ?? null, driveFileId: f.id }).where(eq(schema.transaction.id, t.id));
+    n++;
+  }
+  return n;
 }

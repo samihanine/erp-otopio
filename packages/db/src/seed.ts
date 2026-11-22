@@ -104,12 +104,21 @@ export const FREELANCE_ENTITIES = [
   },
 ];
 
+/** inserts business rows in the workspace of their structure (Otopio Inc. by default) */
+let WS = "";
+const dbw = {
+  insert: (t: Parameters<typeof db.insert>[0]) => ({
+    values: (v: Record<string, unknown> | Record<string, unknown>[]) =>
+      db.insert(t).values((Array.isArray(v) ? v : [v]).map((x) => ({ workspaceId: (x.legalEntityId as string | undefined) ?? WS, ...x })) as never),
+  }),
+};
+
 async function main() {
   if (process.env.SEED_RESET === "1") {
     console.log("[seed] reset business tables");
     await db.execute(rawSql.raw(`TRUNCATE ${BUSINESS_TABLES.map((t) => `"${t}"`).join(", ")} RESTART IDENTITY CASCADE`));
   } else {
-    const existing = await db.select({ id: s.legalEntity.id }).from(s.legalEntity).limit(1);
+    const existing = await db.select({ id: s.project.id }).from(s.project).limit(1);
     if (existing.length) {
       console.log("[seed] database already seeded — skipping (use SEED_RESET=1 to force)");
       return;
@@ -184,13 +193,16 @@ async function main() {
       },
       ...FREELANCE_ENTITIES,
     ])
+    // the workspaces migration already created the structures on a fresh database
+    .onConflictDoUpdate({ target: s.legalEntity.code, set: { legalName: rawSql`excluded.legal_name`, addressLine1: rawSql`excluded.address_line1`, taxIds: rawSql`excluded.tax_ids`, defaultTaxes: rawSql`excluded.default_taxes`, bankDetails: rawSql`excluded.bank_details` } })
     .returning();
   if (!mgs || !otp) throw new Error("entities not created");
+  WS = otp.id;
 
   /* ------------------------------------------------------------------ */
   /*  Organizations                                                     */
   /* ------------------------------------------------------------------ */
-  type OrgIn = typeof s.organization.$inferInsert;
+  type OrgIn = Omit<typeof s.organization.$inferInsert, "workspaceId"> & { workspaceId?: string };
   const orgRows: (OrgIn & { key: string })[] = [
     { key: "otopio", name: "Otopio", type: "internal", status: "active", website: "https://otopio.ca", email: "contact@otopio.ca", city: "Montréal", country: "CA", defaultEntityId: otp.id, industry: "Agence TI — IA, logiciel, quantique" },
     // Clients
@@ -231,7 +243,7 @@ async function main() {
     { key: "cloudflare", name: "Cloudflare", type: "supplier", status: "active", website: "https://cloudflare.com", tags: ["hébergement"] },
     { key: "tcj", name: "Groupe TCJ", type: "supplier", status: "active", website: "https://groupetcj.ca", tags: ["juridique"], notes: "Accompagnement facture impayée (dossier 9024093-1)." },
   ];
-  const orgs = await db
+  const orgs = await dbw
     .insert(s.organization)
     .values(orgRows.map(({ key: _k, ...o }) => o))
     .returning({ id: s.organization.id, name: s.organization.name });
@@ -241,7 +253,7 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  People                                                            */
   /* ------------------------------------------------------------------ */
-  type PersonIn = typeof s.person.$inferInsert;
+  type PersonIn = Omit<typeof s.person.$inferInsert, "workspaceId"> & { workspaceId?: string };
   const peopleRows: (PersonIn & { key: string })[] = [
     { key: "sami", firstName: "Sami", lastName: "Hanine", email: "sami@otopio.ca", jobTitle: "Cofondateur — CTO", organizationId: org.otopio },
     { key: "maissane", firstName: "Maïssane", lastName: "Touati", email: "maissane@otopio.ca", jobTitle: "Cofondatrice — CEO", organizationId: org.otopio },
@@ -264,7 +276,7 @@ async function main() {
     { key: "dansu", firstName: "Dan", lastName: "Su", email: "dan@dansufoods.com", organizationId: org.epik },
     { key: "augustin", firstName: "Augustin", lastName: "Élie", email: "augustin.elie@groupetcj.ca", jobTitle: "Avocat", organizationId: org.tcj },
   ];
-  const people = await db
+  const people = await dbw
     .insert(s.person)
     .values(peopleRows.map(({ key: _k, ...p }) => p))
     .returning({ id: s.person.id });
@@ -274,7 +286,7 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Projects                                                          */
   /* ------------------------------------------------------------------ */
-  type ProjectIn = typeof s.project.$inferInsert;
+  type ProjectIn = Omit<typeof s.project.$inferInsert, "workspaceId"> & { workspaceId?: string };
   const projectRows: (ProjectIn & { key: string })[] = [
     { key: "theoasso", name: "Site web ThéoAsso", organizationId: org.theoasso, legalEntityId: mgs.id, leadId: p.maissane, status: "maintenance", priority: "high", startDate: "2026-05-06", dueDate: "2026-10-31", budget: 7600, currency: "EUR", progress: 90, websiteUrl: "https://www.theoasso.com", description: "Conception et développement du site theoasso.com, parcours de paiement, CMS et SEO/GEO." },
     { key: "onball", name: "Plateforme OnBall", organizationId: org.onball, legalEntityId: mgs.id, leadId: p.maissane, status: "in_progress", priority: "high", startDate: "2026-01-01", dueDate: "2026-04-01", currency: "EUR", progress: 100, websiteUrl: "https://onball.fr" },
@@ -295,7 +307,7 @@ async function main() {
     { key: "gestion", name: "Gestion Otopio", organizationId: org.otopio, legalEntityId: otp.id, status: "on_hold", currency: "CAD", progress: 10, description: "Tâches internes : administratif, subventions, recrutement, marketing." },
     { key: "bourse", name: "Bourse Pierre Péladeau", organizationId: org.otopio, legalEntityId: otp.id, status: "delivered", startDate: "2026-01-15", dueDate: "2026-02-13", currency: "CAD", progress: 100 },
   ];
-  const projects = await db
+  const projects = await dbw
     .insert(s.project)
     .values(projectRows.map(({ key: _k, ...x }) => x))
     .returning({ id: s.project.id });
@@ -305,14 +317,14 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Tasks (from Airtable "Tâches", normalised)                        */
   /* ------------------------------------------------------------------ */
-  type TaskIn = typeof s.task.$inferInsert;
+  type TaskIn = Omit<typeof s.task.$inferInsert, "workspaceId"> & { workspaceId?: string };
   const T = (title: string, project: string, extra: Partial<TaskIn> = {}): TaskIn => ({
     title,
     projectId: pr[project],
     ...extra,
     completedAt: extra.completedAt ?? (extra.status === "done" ? (extra.dueDate ?? extra.startDate ?? "2026-06-02") : null),
   });
-  await db.insert(s.task).values([
+  await dbw.insert(s.task).values([
     T("Améliorer la landing page", "assoSite", { assigneeId: p.maissane, status: "done", priority: "urgent", dueDate: "2026-02-27", labels: ["front-end"], estimateHours: 8, spentHours: 7 }),
     T("Corriger bug recherche", "assoApp", { assigneeId: p.sami, status: "done", dueDate: "2026-02-23", completedAt: "2026-02-22", labels: ["back-end"], estimateHours: 2, spentHours: 1.5 }),
     T("Simplifier l'interface du CRM", "heeroo", { assigneeId: p.sami, status: "done", priority: "urgent", startDate: "2026-02-10", dueDate: "2026-03-01", labels: ["front-end", "back-end", "devops"], estimateHours: 24, spentHours: 26 }),
@@ -358,7 +370,7 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Tickets                                                           */
   /* ------------------------------------------------------------------ */
-  await db.insert(s.ticket).values([
+  await dbw.insert(s.ticket).values([
     { title: "Un même courriel doit pouvoir passer plusieurs commandes", projectId: pr.theoasso, organizationId: org.theoasso, requesterId: p.stephane, assigneeId: p.sami, status: "in_progress", priority: "high", category: "bug", dueDate: "2026-11-20", description: "Workflow trésorier : actuellement bloqué après une première commande." },
     { title: "Accès au code et transfert sur le GitHub client", projectId: pr.theoasso, organizationId: org.theoasso, requesterId: p.stephane, assigneeId: p.sami, status: "triaged", priority: "medium", category: "support", dueDate: "2026-11-28" },
     { title: "Refonte du workflow de paiement", projectId: pr.theoasso, organizationId: org.theoasso, requesterId: p.benjamin, status: "closed", priority: "medium", category: "feature", description: "Devis D-2026-002 envoyé — le client internalise cette partie." },
@@ -371,9 +383,9 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Quotes                                                            */
   /* ------------------------------------------------------------------ */
-  type QuoteIn = typeof s.quote.$inferInsert;
+  type QuoteIn = Omit<typeof s.quote.$inferInsert, "workspaceId"> & { workspaceId?: string };
   const Q = (q: Omit<QuoteIn, "subtotal" | "taxTotal" | "total" | "taxes" | "lines">, lines: DocumentLine[], taxes: TaxRate[]): QuoteIn => ({ ...q, ...totals(lines, taxes) });
-  const quotes = await db
+  const quotes = await dbw
     .insert(s.quote)
     .values([
       Q(
@@ -418,7 +430,7 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Invoices                                                          */
   /* ------------------------------------------------------------------ */
-  type TxIn = typeof s.transaction.$inferInsert;
+  type TxIn = Omit<typeof s.transaction.$inferInsert, "workspaceId"> & { workspaceId?: string };
   type InvSeed = Omit<TxIn, "subtotal" | "taxTotal" | "total" | "taxes" | "lines" | "kind" | "side" | "date" | "label"> & { title?: string; issueDate?: string };
   /** sales invoice → ledger row (kind "invoice") */
   const I = ({ title, issueDate, ...i }: InvSeed, lines: DocumentLine[], taxes: TaxRate[]): TxIn => ({
@@ -430,7 +442,7 @@ async function main() {
     label: title ?? String(i.number),
   });
   const drive = (id: string) => `https://drive.google.com/file/d/${id}/view`;
-  const invoices = await db
+  const invoices = await dbw
     .insert(s.transaction)
     .values([
       // Megascale (FR) — Qonto
@@ -531,12 +543,12 @@ async function main() {
       { label: "Sous-traitance — virement Interac (mai 2026)", legalEntityId: otp.id, category: "subcontracting", status: "paid", issueDate: "2026-05-15", currency: "CAD", total: 0, notes: "Montant à compléter.", driveFileId: "1FTlCzt_PS45sDNNlao_6irsJL1xeXVRiUSWZ3hnGitI" },
       { label: "Groupe TCJ — convention de mandat (facture impayée)", legalEntityId: otp.id, organizationId: org.tcj, category: "legal", status: "to_pay", issueDate: "2026-07-15", currency: "CAD", total: 0, notes: "Honoraires selon convention de mandat — montant à compléter." },
   ];
-  const bills = await db.insert(s.transaction).values(billSeeds.map(E)).returning({ id: s.transaction.id });
+  const bills = await dbw.insert(s.transaction).values(billSeeds.map(E)).returning({ id: s.transaction.id });
 
   /* ------------------------------------------------------------------ */
   /*  Bank transactions (sample feed for reconciliation)                */
   /* ------------------------------------------------------------------ */
-  await db.insert(s.transaction).values([
+  await dbw.insert(s.transaction).values([
     { kind: "movement", legalEntityId: otp.id, date: "2026-10-14", label: "CLOUDFLARE INC", counterparty: "Cloudflare", side: "debit", total: 7.18, subtotal: 7.18, currency: "CAD", source: "quickbooks", notes: "Aucune dépense liée — justificatif à retrouver." },
     { kind: "movement", legalEntityId: mgs.id, date: "2026-10-01", label: "QONTO — abonnement", counterparty: "Qonto", side: "debit", total: 11, subtotal: 11, currency: "EUR", source: "qonto", notes: "Aucune dépense liée — justificatif à retrouver." },
   ]);
@@ -544,7 +556,7 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Marketing                                                         */
   /* ------------------------------------------------------------------ */
-  const [art1, art2] = await db
+  const [art1, art2] = await dbw
     .insert(s.article)
     .values([
       { title: "Agents IA en PME : par où commencer en 2027 ?", slug: "agents-ia-pme-par-ou-commencer", status: "draft", locale: "fr", targetQuery: "agent IA PME Québec", keywords: ["agent IA", "PME", "automatisation"], authorId: p.sami, seoScore: 62, excerpt: "Cas concrets, coûts et pièges à éviter pour déployer un premier agent IA utile." },
@@ -553,7 +565,7 @@ async function main() {
       { title: "Refonte d'un site associatif : le cas ThéoAsso", slug: "refonte-site-associatif-theoasso", status: "review", locale: "fr", targetQuery: "site web association", keywords: ["associatif", "étude de cas", "SEO"], authorId: p.maissane, seoScore: 78 },
     ])
     .returning({ id: s.article.id });
-  await db.insert(s.post).values([
+  await dbw.insert(s.post).values([
     { title: "Lancement du nouveau site otopio.ca", network: "linkedin", status: "scheduled", scheduledAt: new Date("2026-12-01T14:00:00Z"), authorId: p.maissane },
     { title: "Étude de cas ThéoAsso", network: "linkedin", status: "draft", articleId: art2?.id, authorId: p.maissane },
     { title: "3 idées reçues sur les agents IA", network: "instagram", status: "idea", articleId: art1?.id, authorId: p.aisha },
@@ -563,7 +575,7 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Documents (templates + linked Google Docs)                        */
   /* ------------------------------------------------------------------ */
-  await db.insert(s.document).values([
+  await dbw.insert(s.document).values([
     { title: "Devis + cahier des charges", kind: "template", type: "quote", icon: "FilePenLine", content: "# {{quote.title}}\n\n## Contexte\n{{client.name}} souhaite…\n\n## Objectifs\n- …\n\n## Périmètre\n1. …\n\n## Planning\n- Démarrage : …\n- Livraison : …" },
     { title: "Facture", kind: "template", type: "invoice", icon: "Receipt", content: "Facture générée automatiquement à partir des lignes, des taxes et des coordonnées bancaires de la structure émettrice." },
     { title: "Contrat de prestation de service", kind: "template", type: "contract", icon: "ScrollText", content: "# Contrat de prestation de service\n\nEntre **{{entity.legalName}}** et **{{client.legalName}}**…\n\n## 1. Objet\n…\n\n## 2. Durée\n…\n\n## 3. Rémunération\n…\n\n## 4. Propriété intellectuelle\n…" },
@@ -580,7 +592,7 @@ async function main() {
   /*  Default saved views                                               */
   /* ------------------------------------------------------------------ */
   const empty = { filters: [], sorts: [], hiddenFields: [] };
-  await db.insert(s.savedView).values([
+  await dbw.insert(s.savedView).values([
     { table: "task", name: "Tableau des tâches", type: "kanban", icon: "Columns3", position: 1, config: { ...empty, groupBy: "status", filters: [{ id: "f1", field: "status", op: "not_in", value: ["cancelled"] }] } },
     { table: "task", name: "Planning", type: "gantt", icon: "ChartGantt", position: 2, config: { ...empty, dateField: "startDate", endDateField: "dueDate", filters: [{ id: "f1", field: "startDate", op: "is_not_empty" }] } },
     { table: "task", name: "Urgences", type: "table", icon: "Flame", position: 3, config: { ...empty, filters: [{ id: "f1", field: "priority", op: "in", value: ["high", "urgent"] }, { id: "f2", field: "status", op: "not_in", value: ["done", "cancelled"] }], sorts: [{ field: "dueDate", dir: "asc" }] } },

@@ -1,3 +1,4 @@
+import { wsHeaders } from "@/lib/workspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -262,7 +263,7 @@ export function DocumentEditorPage() {
   const downloadPdf = async () => {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/documents/${k}/${id}/pdf?locale=${previewLocale}`, { credentials: "include" });
+      const res = await fetch(`/api/documents/${k}/${id}/pdf?locale=${previewLocale}`, { credentials: "include", headers: wsHeaders() });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

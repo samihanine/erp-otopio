@@ -3,6 +3,7 @@
  * Many reports reason in terms of "invoices", "expenses" and "bank lines": these views rebuild
  * them from the single table so the finance logic stays readable.
  */
+import { eq } from "drizzle-orm";
 import { db, schema } from "@erp/db";
 
 export type Row = typeof schema.transaction.$inferSelect;
@@ -31,6 +32,7 @@ export function splitLedger(rows: Row[]) {
   return { invoices, expenses, cash };
 }
 
-export async function loadLedger() {
-  return splitLedger(await db.select().from(schema.transaction));
+/** ledger of one workspace */
+export async function loadLedger(workspaceId: string) {
+  return splitLedger(await db.select().from(schema.transaction).where(eq(schema.transaction.workspaceId, workspaceId)));
 }

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { wsOf } from "../lib/workspace";
 import { db, schema } from "@erp/db";
 import { renderDocumentHtml, type RenderInput } from "@erp/shared";
 import type { AppEnv } from "../lib/types";
@@ -9,12 +10,12 @@ export const documents = new Hono<AppEnv>();
 
 documents.get("/list", async (c) => {
   const kind = c.req.query("kind") === "template" ? "template" : "document";
-  const rows = await db.select().from(schema.document).where(eq(schema.document.kind, kind)).orderBy(desc(schema.document.updatedAt));
+  const rows = await db.select().from(schema.document).where(and(eq(schema.document.workspaceId, wsOf(c).id), eq(schema.document.kind, kind))).orderBy(desc(schema.document.updatedAt));
   return c.json(rows);
 });
 
 documents.get("/doc/:id", async (c) => {
-  const [row] = await db.select().from(schema.document).where(eq(schema.document.id, c.req.param("id")));
+  const [row] = await db.select().from(schema.document).where(and(eq(schema.document.id, c.req.param("id")), eq(schema.document.workspaceId, wsOf(c).id)));
   return row ? c.json(row) : c.json({ error: "Not found" }, 404);
 });
 
@@ -22,7 +23,7 @@ documents.post("/doc", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { title?: string; type?: string; content?: string };
   const [row] = await db
     .insert(schema.document)
-    .values({ title: b.title || "Sans titre", type: (b.type as never) ?? "free", content: b.content ?? "", createdBy: c.get("user")?.id })
+    .values({ workspaceId: wsOf(c).id, title: b.title || "Sans titre", type: (b.type as never) ?? "free", content: b.content ?? "", createdBy: c.get("user")?.id })
     .returning();
   return c.json(row, 201);
 });
@@ -31,17 +32,17 @@ documents.patch("/doc/:id", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { title?: string; content?: string; googleDocId?: string | null };
   const set: Record<string, unknown> = {};
   for (const k of ["title", "content", "googleDocId"] as const) if (b[k] !== undefined) set[k] = b[k];
-  const [row] = await db.update(schema.document).set(set).where(eq(schema.document.id, c.req.param("id"))).returning();
+  const [row] = await db.update(schema.document).set(set).where(and(eq(schema.document.id, c.req.param("id")), eq(schema.document.workspaceId, wsOf(c).id))).returning();
   return row ? c.json(row) : c.json({ error: "Not found" }, 404);
 });
 
-export async function buildRenderInput(kind: "quote" | "invoice", id: string, locale: "fr" | "en" = "fr"): Promise<RenderInput | null> {
+export async function buildRenderInput(kind: "quote" | "invoice", id: string, locale: "fr" | "en" = "fr", wsId?: string): Promise<RenderInput | null> {
   let doc: { number: string | null; title: string | null; issueDate: string | null; dueDate: string | null; currency: string; lines: never[]; taxes: { code: string; label: string; rate: number }[]; amountPaid: number; legalEntityId: string; organizationId: string | null; contactId: string | null; introduction: string | null; scope: string | null; terms: string | null } | null = null;
   if (kind === "quote") {
-    const [q] = await db.select().from(schema.quote).where(eq(schema.quote.id, id));
+    const [q] = await db.select().from(schema.quote).where(and(eq(schema.quote.id, id), wsId ? eq(schema.quote.workspaceId, wsId) : undefined));
     if (q) doc = { number: q.number, title: q.title, issueDate: q.issueDate, dueDate: q.validUntil, currency: q.currency, lines: q.lines as never[], taxes: q.taxes, amountPaid: 0, legalEntityId: q.legalEntityId, organizationId: q.organizationId, contactId: q.contactId, introduction: q.introduction, scope: q.scope, terms: q.terms };
   } else {
-    const [i] = await db.select().from(schema.transaction).where(eq(schema.transaction.id, id));
+    const [i] = await db.select().from(schema.transaction).where(and(eq(schema.transaction.id, id), wsId ? eq(schema.transaction.workspaceId, wsId) : undefined));
     if (i) doc = { number: i.number, title: i.label, issueDate: i.date, dueDate: i.dueDate, currency: i.currency, lines: i.lines as never[], taxes: i.taxes, amountPaid: i.amountPaid, legalEntityId: i.legalEntityId, organizationId: i.organizationId, contactId: null, introduction: null, scope: null, terms: null };
   }
   if (!doc) return null;
@@ -74,7 +75,7 @@ export async function buildRenderInput(kind: "quote" | "invoice", id: string, lo
 documents.get("/:kind/:id/html", async (c) => {
   const kind = c.req.param("kind");
   if (kind !== "quote" && kind !== "invoice") return c.json({ error: "Unknown kind" }, 400);
-  const input = await buildRenderInput(kind, c.req.param("id"), c.req.query("locale") === "en" ? "en" : "fr");
+  const input = await buildRenderInput(kind, c.req.param("id"), c.req.query("locale") === "en" ? "en" : "fr", wsOf(c).id);
   if (!input) return c.json({ error: "Not found" }, 404);
   return c.html(renderDocumentHtml(input));
 });
@@ -84,7 +85,7 @@ documents.get("/:kind/:id/pdf", async (c) => {
   const kind = c.req.param("kind");
   if (kind !== "quote" && kind !== "invoice") return c.json({ error: "Unknown kind" }, 400);
   const locale = c.req.query("locale") === "en" ? "en" : "fr";
-  const input = await buildRenderInput(kind, c.req.param("id"), locale);
+  const input = await buildRenderInput(kind, c.req.param("id"), locale, wsOf(c).id);
   if (!input) return c.json({ error: "Not found" }, 404);
   try {
     const id = c.req.param("id");
@@ -113,7 +114,7 @@ documents.get("/:kind/:id/pdf", async (c) => {
 
 /** Converts an accepted quote into a draft invoice. */
 documents.post("/quote/:id/invoice", async (c) => {
-  const [q] = await db.select().from(schema.quote).where(eq(schema.quote.id, c.req.param("id")));
+  const [q] = await db.select().from(schema.quote).where(and(eq(schema.quote.id, c.req.param("id")), eq(schema.quote.workspaceId, wsOf(c).id)));
   if (!q) return c.json({ error: "Not found" }, 404);
   const { nextNumber } = await import("../lib/data");
   const n = await nextNumber("invoice", q.legalEntityId);
@@ -122,6 +123,7 @@ documents.post("/quote/:id/invoice", async (c) => {
     .values({
       kind: "invoice",
       side: "credit",
+      workspaceId: q.workspaceId,
       number: n.number,
       label: q.title,
       legalEntityId: q.legalEntityId,

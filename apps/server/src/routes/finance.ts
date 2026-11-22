@@ -6,6 +6,7 @@ import { loadLedger } from "../lib/ledger";
 import { eq as eqOp } from "drizzle-orm";
 import { computeMGS, computeOTP, DEFAULTS, fiscalYear, type TaxConfig } from "../lib/taxes";
 import { env } from "../lib/env";
+import { wsOf } from "../lib/workspace";
 
 export const finance = new Hono<AppEnv>();
 
@@ -32,12 +33,13 @@ finance.get("/summary", async (c) => {
   const months = (c.req.query("months") ?? "").split(",").map(Number).filter((m) => m >= 1 && m <= 12);
   /** date within the selected period (year or all years, optionally restricted to some months) */
   const inYear = (d: string | null | undefined, _y?: unknown) => !!d && (year === "all" || d.slice(0, 4) === String(year)) && (!months.length || months.includes(Number(d.slice(5, 7))));
-  const entityParam = c.req.query("entity") ?? "all";
+  const ws = wsOf(c);
+  const entityParam = ws.id;
 
   const [entities, ledger, orgs] = await Promise.all([
-    db.select().from(schema.legalEntity),
-    loadLedger(),
-    db.select({ id: schema.organization.id, name: schema.organization.name }).from(schema.organization),
+    db.select().from(schema.legalEntity).where(eqOp(schema.legalEntity.id, ws.id)),
+    loadLedger(ws.id),
+    db.select({ id: schema.organization.id, name: schema.organization.name }).from(schema.organization).where(eqOp(schema.organization.workspaceId, ws.id)),
   ]);
   const { invoices, expenses: bills, cash: txs } = ledger;
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
@@ -177,7 +179,7 @@ finance.get("/summary", async (c) => {
 
   // Subscriptions still running (latest charge flagged active), with a monthly equivalent
   const PER_MONTH: Record<string, number> = { monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, none: 1 };
-  const cardsById = new Map((await db.select().from(schema.creditCard)).map((k) => [k.id, k]));
+  const cardsById = new Map((await db.select().from(schema.creditCard).where(eqOp(schema.creditCard.workspaceId, ws.id))).map((k) => [k.id, k]));
   const subscriptions = scoped(bills)
     .filter((b) => b.active && b.paidBy !== "client")
     .map((b) => {
@@ -298,7 +300,8 @@ async function saveTaxConfig(code: string, cfg: TaxConfig) {
 
 finance.get("/taxes", async (c) => {
   const year = Number(c.req.query("year") ?? new Date().getFullYear());
-  const [entities, ledger] = await Promise.all([db.select().from(schema.legalEntity), loadLedger()]);
+  const ws = wsOf(c);
+  const [entities, ledger] = await Promise.all([db.select().from(schema.legalEntity).where(eqOp(schema.legalEntity.id, ws.id)), loadLedger(ws.id)]);
   const { invoices, expenses: bills } = ledger;
   const fx = await fxRates();
   const out = [];
@@ -356,6 +359,7 @@ finance.get("/taxes", async (c) => {
 
 finance.put("/taxes/config/:code", async (c) => {
   const code = c.req.param("code");
+  if (code !== wsOf(c).code) return c.json({ error: "Autre structure" }, 403);
   if (!DEFAULTS[code]) return c.json({ error: "Unknown entity" }, 400);
   const patch = (await c.req.json()) as TaxConfig;
   const cur = await taxConfig(code);

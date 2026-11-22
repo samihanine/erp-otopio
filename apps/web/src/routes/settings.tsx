@@ -4,12 +4,12 @@ import { Cloud, Database, Github, HardDrive, Landmark, Plus, Server } from "luci
 import { AppShell } from "@/components/layout/app-shell";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { useCreateRecord, useList } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { Segmented, StatusDot } from "@/components/ui/misc";
 import { useState } from "react";
 import { AiUsage, AutomationJournal, PersonalGoogle } from "./automation";
 import { usePrefValue } from "@/lib/use-media";
+import { WorkspaceSettings } from "./workspace-settings";
 
 type Status = {
   google: { connected: boolean; scope: string };
@@ -24,11 +24,10 @@ type Status = {
 export function SettingsPage() {
   const { tr, t, locale, setLocale } = useI18n();
   const navigate = useNavigate();
-  const { data: entities } = useList("legal_entity", {});
   const { data: status } = useQuery({ queryKey: ["integrations"], queryFn: () => api<Status>("/integrations/status") });
   const { data: health } = useQuery({ queryKey: ["health"], queryFn: () => api<{ ok: boolean; env: string; version: string; db: boolean; redis: boolean }>("/health") });
-  const create = useCreateRecord("legal_entity");
-  const [tab, setTab] = usePrefValue<"entities" | "integrations" | "accounts" | "automation" | "ai" | "prefs" | "system">("settings:tab", "entities");
+  const [tab0, setTab] = usePrefValue<"workspace" | "entities" | "integrations" | "accounts" | "automation" | "ai" | "prefs" | "system">("settings:tab", "workspace");
+  const tab = tab0 === "entities" ? "workspace" : tab0;
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
 
   const integrations = status
@@ -53,7 +52,7 @@ export function SettingsPage() {
             value={tab}
             onChange={setTab}
             options={[
-              { value: "entities", label: tr({ fr: "Structures", en: "Entities" }) },
+              { value: "workspace", label: tr({ fr: "Espace de travail", en: "Workspace" }) },
               { value: "integrations", label: tr({ fr: "Intégrations", en: "Integrations" }) },
               { value: "accounts", label: tr({ fr: "Comptes Google", en: "Google accounts" }) },
               { value: "automation", label: tr({ fr: "Automatisations", en: "Automations" }) },
@@ -63,51 +62,7 @@ export function SettingsPage() {
             ]}
           />
 
-          {tab === "entities" && (
-          <section className="mt-8">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">{tr({ fr: "Structures de facturation", en: "Billing entities" })}</h2>
-                <p className="text-[13px] text-muted">{tr({ fr: "Chaque facture, devis et dépense est rattaché à une structure. Ajoutez-en autant que nécessaire.", en: "Every invoice, quote and bill belongs to an entity. Add as many as needed." })}</p>
-              </div>
-              <Button
-                onClick={async () => {
-                  const res = await create.mutateAsync({ name: tr({ fr: "Nouvelle structure", en: "New entity" }) });
-                  navigate({ to: "/db/$table/$id", params: { table: "legal_entity", id: res.row.id } });
-                }}
-              >
-                <Plus /> {tr({ fr: "Ajouter", en: "Add" })}
-              </Button>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {entities?.rows.map((e) => (
-                <button key={e.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "legal_entity", id: e.id } })} className="rounded-xl border border-border p-4 text-left transition hover:border-border-strong">
-                  <div className="flex items-center gap-3">
-                    <span className="grid size-10 place-items-center rounded-xl text-sm font-bold text-white" style={{ background: String(e.color ?? "#1c3266") }}>
-                      {String(e.country)}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="truncate text-[14px] font-semibold">{String(e.legalName)}</div>
-                      <div className="text-xs text-muted">
-                        {String(e.legalForm ?? "")} · {String(e.currency)} · {String(e.accountingProvider)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-3 space-y-0.5 text-xs text-muted">
-                    <div>{[e.addressLine1, e.postalCode, e.city].filter(Boolean).join(", ")}</div>
-                    <div>{e.registrationNumber ? String(e.registrationNumber) : ""}</div>
-                    <div>{((e.taxIds as { label: string; value: string }[]) ?? []).map((x) => `${x.label} ${x.value}`).join(" · ")}</div>
-                    <div className="pt-1 font-mono">
-                      {tr({ fr: "Factures", en: "Invoices" })} {String(e.invoicePrefix).replace("{YYYY}", String(new Date().getFullYear()))}
-                      {String(e.nextInvoiceNumber).padStart(3, "0")} · {tr({ fr: "Devis", en: "Quotes" })} {String(e.quotePrefix).replace("{YYYY}", String(new Date().getFullYear()))}
-                      {String(e.nextQuoteNumber).padStart(3, "0")}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-          )}
+          {tab === "workspace" && <WorkspaceSettings />}
 
           {tab === "integrations" && (
           <section className="mt-10">

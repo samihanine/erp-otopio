@@ -2,13 +2,17 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 import { db, schema } from "@erp/db";
+import { magicLink } from "better-auth/plugins/magic-link";
 import { env } from "./env";
+import { isKnownEmail } from "./workspace";
+import { mailLayout, sendMail } from "./mail";
 
-function assertAllowedEmail(email: string) {
+/** Members of a workspace (or of an allowed domain) and invited portal clients only. */
+async function assertAllowedEmail(email: string) {
   const domain = email.split("@")[1]?.toLowerCase() ?? "";
-  if (!env.allowedDomains.includes(domain)) {
-    throw new APIError("FORBIDDEN", { message: `Seuls les comptes @${env.allowedDomains.join(", @")} peuvent se connecter.` });
-  }
+  if (env.allowedDomains.includes(domain)) return;
+  if (await isKnownEmail(email)) return;
+  throw new APIError("FORBIDDEN", { message: "Cette adresse n'a pas accès à l'ERP. Demande une invitation à Otopio." });
 }
 
 export const auth = betterAuth({
@@ -24,16 +28,25 @@ export const auth = betterAuth({
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 10 },
   socialProviders:
     env.googleClientId && env.googleClientSecret
-      ? { google: { clientId: env.googleClientId, clientSecret: env.googleClientSecret, prompt: "select_account", hd: env.allowedDomains[0] } as never }
+      ? { google: { clientId: env.googleClientId, clientSecret: env.googleClientSecret, prompt: "select_account" } as never }
       : undefined,
   user: { additionalFields: { role: { type: "string", defaultValue: "member", input: false }, locale: { type: "string", defaultValue: "fr" } } },
   session: { expiresIn: 60 * 60 * 24 * 30, cookieCache: { enabled: true, maxAge: 300 } },
   advanced: { useSecureCookies: env.authUrl.startsWith("https") },
+  plugins: [
+    magicLink({
+      expiresIn: 15 * 60,
+      sendMagicLink: async ({ email, url }) => {
+        await assertAllowedEmail(email);
+        await sendMail(email, "Ton lien de connexion Otopio", mailLayout("Connexion à ton espace", "Clique sur le bouton ci-dessous pour te connecter. Le lien est valable 15 minutes et ne peut servir qu'une fois.", { label: "Me connecter", url }));
+      },
+    }),
+  ],
   databaseHooks: {
     user: {
       create: {
         before: async (user) => {
-          assertAllowedEmail(user.email);
+          await assertAllowedEmail(user.email);
           return { data: user };
         },
       },
@@ -41,7 +54,7 @@ export const auth = betterAuth({
   },
 });
 
-export const authEnabledProviders = () => ({ google: Boolean(env.googleClientId && env.googleClientSecret), password: true });
+export const authEnabledProviders = () => ({ google: Boolean(env.googleClientId && env.googleClientSecret), password: true, magicLink: true });
 
 /** Creates the initial admin account (email/password) when ADMIN_PASSWORD is set. */
 export async function ensureAdmin() {

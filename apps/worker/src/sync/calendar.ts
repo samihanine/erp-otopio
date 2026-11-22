@@ -5,7 +5,7 @@
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { db, schema } from "@erp/db";
 import { calendar, GoogleError, type GEvent } from "@erp/google";
-import { directory, getState, log, MEMBERS, setState } from "./common";
+import { directory, getState, log, MEMBERS, setState, wsByCode } from "./common";
 
 const meetLink = (e: GEvent) =>
   e.hangoutLink ?? e.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri ?? (e.description ?? e.location ?? "").match(/https:\/\/(teams\.microsoft\.com|[\w.]*zoom\.us)\/[^\s"<>]+/)?.[0] ?? null;
@@ -40,6 +40,7 @@ function kindOf(e: GEvent, priv: boolean, ext: string[]) {
 export async function syncCalendars() {
   const seriesCache = new Map<string, string | null>();
   const dir = await directory();
+  const defaultWs = (await wsByCode("OTP"))!.id;
   const stats: Record<string, number> = {};
   for (const owner of MEMBERS) {
     const key = `calendar:${owner}:syncToken`;
@@ -72,6 +73,7 @@ export async function syncCalendars() {
       const attendees = (e.attendees ?? []).map((a) => a.email.toLowerCase()).filter((x) => !x.includes("resource.calendar"));
       const m = dir.match(attendees.filter((a) => !a.endsWith("@otopio.ca")));
       const values = {
+        workspaceId: (!priv && (m.org?.workspaceId ?? m.person?.workspaceId)) || defaultWs,
         title: priv ? "Occupé" : (e.summary ?? "(sans titre)"),
         description: priv ? null : (e.description ?? null),
         location: priv ? null : (e.location ?? null),
@@ -149,6 +151,7 @@ export async function meetingsToCommunications() {
     const [c] = await db
       .insert(schema.communication)
       .values({
+        workspaceId: e.workspaceId,
         subject: e.title,
         type: type as never,
         direction: "outbound",

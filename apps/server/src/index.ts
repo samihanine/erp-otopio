@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { serveStatic } from "hono/bun";
-import { sql } from "@erp/db";
+import { db, schema, sql } from "@erp/db";
+import { eq, or, sql as dsql } from "drizzle-orm";
 import { auth, authEnabledProviders, ensureAdmin } from "./lib/auth";
 import { env } from "./lib/env";
 import type { AppEnv } from "./lib/types";
@@ -16,6 +17,9 @@ import { redisOk } from "./lib/queue";
 import { internalKey, mcp, wellKnown } from "./routes/mcp";
 import { workspace } from "./routes/workspace";
 import { publicApi, websiteAdmin } from "./routes/website";
+import { workspaceGuard } from "./lib/workspace";
+import { workspaces } from "./routes/workspaces";
+import { portal } from "./routes/portal";
 
 const app = new Hono<AppEnv>();
 
@@ -51,6 +55,21 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.get("/api/me", (c) => c.json(c.get("user")));
+// client portal (no workspace membership needed — access checked per client)
+app.route("/api/portal", portal);
+// workspace list / settings (membership checked inside)
+app.route("/api/workspaces", workspaces);
+// every other route works inside the current workspace (x-workspace header)
+app.use("/api/*", async (c, next) => {
+  if (c.req.header("x-internal") === internalKey && !c.get("user")) {
+    const w = c.req.header("x-workspace") ?? "OTP";
+    const [e] = await db.select().from(schema.legalEntity).where(or(eq(schema.legalEntity.code, w), eq(schema.legalEntity.slug, w), dsql`${schema.legalEntity.id}::text = ${w}`));
+    if (!e) return c.json({ error: "Unknown workspace" }, 400);
+    c.set("ws", { ...e, role: "admin" });
+    return next();
+  }
+  return workspaceGuard(c, next);
+});
 app.route("/api/data", data);
 app.route("/api/search", search);
 app.route("/api/activity", activity);

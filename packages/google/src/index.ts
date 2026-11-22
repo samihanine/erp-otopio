@@ -28,6 +28,8 @@ const b64u = (s: string | Buffer) => Buffer.from(s).toString("base64url");
 const cache = new Map<string, { t: string; exp: number }>();
 
 export async function accessToken(subject: string, scope: string) {
+  // "oauth:<access token>" = a user's own OAuth token (personal Gmail / Drive), used as is
+  if (subject.startsWith("oauth:")) return subject.slice(6);
   const k = `${subject}|${scope}`;
   const c = cache.get(k);
   if (c && c.exp > Date.now() + 60_000) return c.t;

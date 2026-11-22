@@ -185,8 +185,35 @@ export const legalEntity = pgTable("legal_entity", {
   accountingProvider: accountingProvider("accounting_provider").notNull().default("none"),
   accountingConnected: boolean("accounting_connected").notNull().default(false),
   color: text("color").notNull().default("#1c3266"),
+  /* ---- workspace (one workspace = one structure) ---- */
+  slug: text("slug").unique(),
+  /** modules (sidebar tabs) turned off for this workspace */
+  disabledModules: text("disabled_modules").array().notNull().default([]),
+  websiteDomain: text("website_domain"),
+  /** Drive storage: shared drives (clients/admin) or a folder in a personal Drive (personalEmail + folderId) */
+  drive: jsonb("drive").$type<WorkspaceDrive>().notNull().default({}),
+  /** mailboxes synced into this workspace (Gmail) */
+  mailboxes: text("mailboxes").array().notNull().default([]),
   ...timestamps,
 });
+
+export type WorkspaceDrive = { clients?: string; admin?: string; personalEmail?: string; folderId?: string };
+
+/** Who can open a workspace. `email` may be a domain wildcard ("*@otopio.ca"). */
+export const workspaceMember = pgTable(
+  "workspace_member",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    /** admin | member | viewer */
+    role: text("role").notNull().default("member"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("workspace_member_uq").on(t.workspaceId, t.email)],
+);
 
 /* -------------------------------------------------------------------------- */
 /*  CRM                                                                       */
@@ -196,6 +223,9 @@ export const organization = pgTable(
   "organization",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     name: text("name").notNull(),
     legalName: text("legal_name"),
     type: organizationType("type").notNull().default("client"),
@@ -216,6 +246,8 @@ export const organization = pgTable(
     tags: text("tags").array().notNull().default([]),
     notes: text("notes"),
     driveFolderId: text("drive_folder_id"),
+    /** other workspaces that have their own record for the same company (codes, informative only) */
+    alsoIn: text("also_in").array().notNull().default([]),
     aiSummary: text("ai_summary"),
     aiSummaryAt: timestamp("ai_summary_at", { withTimezone: true }),
     ...timestamps,
@@ -227,6 +259,9 @@ export const person = pgTable(
   "person",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     firstName: text("first_name").notNull(),
     lastName: text("last_name"),
     email: text("email"),
@@ -248,6 +283,9 @@ export const communication = pgTable(
   "communication",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     subject: text("subject").notNull(),
     type: communicationType("type").notNull().default("email"),
     direction: communicationDirection("direction").notNull().default("outbound"),
@@ -285,6 +323,9 @@ export const project = pgTable(
   "project",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     name: text("name").notNull(),
     code: text("code"),
     organizationId: uuid("organization_id").references(() => organization.id, { onDelete: "set null" }),
@@ -310,6 +351,9 @@ export const task = pgTable(
   "task",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     title: text("title").notNull(),
     projectId: uuid("project_id").references(() => project.id, { onDelete: "cascade" }),
     assigneeId: uuid("assignee_id").references(() => person.id, { onDelete: "set null" }),
@@ -333,6 +377,9 @@ export const ticket = pgTable(
   "ticket",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     number: integer("number").generatedAlwaysAsIdentity(),
     title: text("title").notNull(),
     projectId: uuid("project_id").references(() => project.id, { onDelete: "cascade" }),
@@ -371,6 +418,9 @@ export const quote = pgTable(
   "quote",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     number: text("number").notNull(),
     title: text("title").notNull(),
     legalEntityId: uuid("legal_entity_id")
@@ -400,6 +450,9 @@ export const quote = pgTable(
 
 export const creditCard = pgTable("credit_card", {
   id: id(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => legalEntity.id),
   label: text("label").notNull(),
   brand: cardBrand("brand").notNull().default("visa"),
   last4: text("last4"),
@@ -425,6 +478,9 @@ export const transaction = pgTable(
   "transaction",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     kind: text("kind").notNull().default("movement"),
     side: transactionSide("side").notNull(),
     legalEntityId: uuid("legal_entity_id")
@@ -490,6 +546,9 @@ export const transaction = pgTable(
 
 export const article = pgTable("article", {
   id: id(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => legalEntity.id),
   title: text("title").notNull(),
   slug: text("slug").notNull().unique(),
   locale: text("locale").notNull().default("fr"),
@@ -526,6 +585,9 @@ export type ArtifactSection = {
 /** Portfolio project shown on the website ("réalisation"). */
 export const artifact = pgTable("artifact", {
   id: id(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => legalEntity.id),
   slug: text("slug").notNull().unique(),
   title: text("title").notNull(),
   customer: text("customer"),
@@ -549,6 +611,9 @@ export const artifact = pgTable("artifact", {
 
 export const teamMember = pgTable("team_member", {
   id: id(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => legalEntity.id),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   role: text("role"),
@@ -565,6 +630,9 @@ export const teamMember = pgTable("team_member", {
 
 export const post = pgTable("post", {
   id: id(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => legalEntity.id),
   title: text("title").notNull(),
   network: socialNetwork("network").notNull().default("linkedin"),
   status: contentStatus("status").notNull().default("idea"),
@@ -584,6 +652,9 @@ export const post = pgTable("post", {
 
 export const document = pgTable("document", {
   id: id(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => legalEntity.id),
   title: text("title").notNull(),
   kind: documentKind("kind").notNull().default("document"),
   type: documentType("type").notNull().default("free"),
@@ -611,8 +682,35 @@ export const document = pgTable("document", {
   quoteId: uuid("quote_id").references(() => quote.id, { onDelete: "set null" }),
   billId: uuid("bill_id").references(() => transaction.id, { onDelete: "set null" }),
   communicationId: uuid("communication_id"),
+  // Files dropped by a client in the portal
+  /** to_sort (new upload waiting for an admin) | sorted */
+  status: text("status"),
+  /** invoice | expense | legal | deliverable | other */
+  category: text("category"),
+  description: text("description"),
+  uploadedBy: text("uploaded_by"),
   ...timestamps,
 });
+
+/** Client portal: emails allowed to see one client record (read-only) and drop files. */
+export const portalAccess = pgTable(
+  "portal_access",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    active: boolean("active").notNull().default(true),
+    invitedAt: timestamp("invited_at", { withTimezone: true }),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("portal_access_uq").on(t.organizationId, t.email), index("portal_access_email_idx").on(t.email)],
+);
 
 export const file = pgTable("file", {
   id: id(),
@@ -622,6 +720,7 @@ export const file = pgTable("file", {
   mimeType: text("mime_type").notNull(),
   table: text("table_name"),
   recordId: uuid("record_id"),
+  workspaceId: uuid("workspace_id").references(() => legalEntity.id),
   uploadedBy: text("uploaded_by").references(() => user.id, { onDelete: "set null" }),
   ...timestamps,
 });
@@ -646,6 +745,9 @@ export const savedView = pgTable(
   "saved_view",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     table: text("table_name").notNull(),
     name: text("name").notNull(),
     type: text("type").notNull().default("table"), // table | kanban | gantt | calendar | gallery | list
@@ -715,6 +817,9 @@ export const event = pgTable(
   "event",
   {
     id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => legalEntity.id),
     title: text("title").notNull(),
     description: text("description"),
     location: text("location"),
@@ -757,6 +862,7 @@ export const aiUsage = pgTable(
   {
     id: id(),
     feature: text("feature").notNull(),
+    workspaceId: uuid("workspace_id"),
     model: text("model").notNull(),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),

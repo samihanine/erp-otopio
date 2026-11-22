@@ -7,6 +7,12 @@ import { round2, toCAD } from "@erp/shared";
 import type { AppEnv } from "../lib/types";
 import { queue } from "../lib/queue";
 import { loadLedger } from "../lib/ledger";
+import { wsOf } from "../lib/workspace";
+import { driveSubject } from "../lib/drive-access";
+import { CATEGORY_FOLDERS, clientSubfolder } from "../lib/client-drive";
+import { mailLayout, sendMail, esc } from "../lib/mail";
+import { storeUploads } from "./portal";
+import { env } from "../lib/env";
 
 export const workspace = new Hono<AppEnv>();
 const ADMIN = "contact@otopio.ca";
@@ -14,11 +20,12 @@ const ADMIN = "contact@otopio.ca";
 /* ------------------------------- Clients ---------------------------------- */
 
 workspace.get("/clients", async (c) => {
-  const orgs = await db.select().from(schema.organization).where(inArray(schema.organization.type, ["client"])).orderBy(asc(schema.organization.name));
+  const ws = wsOf(c);
+  const orgs = await db.select().from(schema.organization).where(and(eq(schema.organization.workspaceId, ws.id), inArray(schema.organization.type, ["client"]))).orderBy(asc(schema.organization.name));
   const [invoices, projects, comms] = await Promise.all([
-    db.select().from(schema.transaction).where(eq(schema.transaction.kind, "invoice")),
-    db.select().from(schema.project),
-    db.select({ org: schema.communication.organizationId, last: sql<string>`max(${schema.communication.occurredAt})`, n: sql<number>`count(*)::int` }).from(schema.communication).groupBy(schema.communication.organizationId),
+    db.select().from(schema.transaction).where(and(eq(schema.transaction.workspaceId, ws.id), eq(schema.transaction.kind, "invoice"))),
+    db.select().from(schema.project).where(eq(schema.project.workspaceId, ws.id)),
+    db.select({ org: schema.communication.organizationId, last: sql<string>`max(${schema.communication.occurredAt})`, n: sql<number>`count(*)::int` }).from(schema.communication).where(eq(schema.communication.workspaceId, ws.id)).groupBy(schema.communication.organizationId),
   ]);
   return c.json(
     orgs.map((o) => {
@@ -37,7 +44,8 @@ workspace.get("/clients", async (c) => {
 
 workspace.get("/clients/:id", async (c) => {
   const id = c.req.param("id");
-  const [org] = await db.select().from(schema.organization).where(eq(schema.organization.id, id));
+  const ws = wsOf(c);
+  const [org] = await db.select().from(schema.organization).where(and(eq(schema.organization.id, id), eq(schema.organization.workspaceId, ws.id)));
   if (!org) return c.json({ error: "Not found" }, 404);
   const [people, projects, invoices, quotes, comms, tickets, docs, events, tx] = await Promise.all([
     db.select().from(schema.person).where(eq(schema.person.organizationId, id)),
@@ -48,12 +56,12 @@ workspace.get("/clients/:id", async (c) => {
     db.select().from(schema.ticket).where(eq(schema.ticket.organizationId, id)).orderBy(desc(schema.ticket.createdAt)),
     db.select().from(schema.document).where(and(eq(schema.document.organizationId, id), eq(schema.document.isFolder, false))).orderBy(desc(schema.document.modifiedAt)).limit(60),
     db.select().from(schema.event).where(eq(schema.event.organizationId, id)).orderBy(desc(schema.event.startAt)).limit(200),
-    loadLedger(),
+    loadLedger(ws.id),
   ]);
   const projectIds = projects.map((p) => p.id);
   const tasks = projectIds.length ? await db.select().from(schema.task).where(inArray(schema.task.projectId, projectIds)) : [];
   const live = invoices.filter((i) => i.status !== "cancelled" && i.status !== "draft" && i.status !== "lost");
-  const cur = org.defaultEntityId ? (await db.select({ c: schema.legalEntity.currency }).from(schema.legalEntity).where(eq(schema.legalEntity.id, org.defaultEntityId)))[0]?.c ?? "CAD" : "CAD";
+  const cur = ws.currency;
   const conv = (a: number, from: string) => (from === cur ? a : cur === "CAD" ? toCAD(a, from) : a);
   const now = Date.now();
   const pastMeetings = events.filter((e) => e.endAt.getTime() < now && !e.isPrivate);
@@ -90,12 +98,119 @@ workspace.get("/clients/:id", async (c) => {
     upcoming: events.filter((e) => e.startAt.getTime() >= now).sort((a, b) => a.startAt.getTime() - b.startAt.getTime()).slice(0, 6),
     driveUrl: org.driveFolderId ? `https://drive.google.com/drive/folders/${org.driveFolderId}` : null,
     payments: tx.cash.filter((t) => live.some((i) => i.id === t.invoiceId)),
+    uploads: await db.select().from(schema.document).where(and(eq(schema.document.organizationId, id), sql`${schema.document.uploadedBy} is not null`)).orderBy(desc(schema.document.createdAt)).limit(100),
+    portal: await db.select().from(schema.portalAccess).where(eq(schema.portalAccess.organizationId, id)).orderBy(asc(schema.portalAccess.email)),
   });
 });
 
 workspace.post("/clients/:id/folder", async (c) => {
+  const [org] = await db.select({ id: schema.organization.id }).from(schema.organization).where(and(eq(schema.organization.id, c.req.param("id")), eq(schema.organization.workspaceId, wsOf(c).id)));
+  if (!org) return c.json({ error: "Not found" }, 404);
   await queue.add("client-folder", { organizationId: c.req.param("id") }, { removeOnComplete: 20 });
   return c.json({ ok: true });
+});
+
+/* ------------------------------ Client portal ------------------------------ */
+
+async function orgInWs(id: string, wsId: string) {
+  const [o] = await db.select().from(schema.organization).where(and(eq(schema.organization.id, id), eq(schema.organization.workspaceId, wsId)));
+  return o;
+}
+
+async function sendInvite(email: string, orgName: string, wsName: string) {
+  const url = `${env.appUrl.replace(/\/$/, "")}/portail?email=${encodeURIComponent(email)}`;
+  return sendMail(
+    email,
+    `Ton espace client ${orgName} — ${wsName}`,
+    mailLayout(
+      `Ton espace client ${orgName}`,
+      `${esc(wsName)} t'a ouvert un accès à ton espace client : suivi des projets, devis, factures et fichiers partagés. Tu peux aussi y déposer des documents.<br><br>Connexion sans mot de passe : un lien de connexion t'est envoyé par courriel, ou connecte-toi avec Google (même adresse).`,
+      { label: "Ouvrir mon espace client", url },
+    ),
+  );
+}
+
+workspace.post("/clients/:id/portal", async (c) => {
+  const ws = wsOf(c);
+  const org = await orgInWs(c.req.param("id"), ws.id);
+  if (!org) return c.json({ error: "Not found" }, 404);
+  const b = (await c.req.json()) as { email: string; send?: boolean };
+  const email = (b.email ?? "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return c.json({ error: "Email invalide" }, 400);
+  const [row] = await db
+    .insert(schema.portalAccess)
+    .values({ workspaceId: ws.id, organizationId: org.id, email, active: true })
+    .onConflictDoUpdate({ target: [schema.portalAccess.organizationId, schema.portalAccess.email], set: { active: true, updatedAt: new Date() } })
+    .returning();
+  let sent = false;
+  if (b.send !== false) {
+    sent = await sendInvite(email, org.name, ws.name).catch((e) => {
+      console.warn("[portal] invite failed", (e as Error).message);
+      return false;
+    });
+    if (sent) await db.update(schema.portalAccess).set({ invitedAt: new Date() }).where(eq(schema.portalAccess.id, row!.id));
+  }
+  return c.json({ ...row, sent }, 201);
+});
+
+workspace.post("/clients/:id/portal/:pid/resend", async (c) => {
+  const ws = wsOf(c);
+  const org = await orgInWs(c.req.param("id"), ws.id);
+  const [p] = await db.select().from(schema.portalAccess).where(and(eq(schema.portalAccess.id, c.req.param("pid")), eq(schema.portalAccess.workspaceId, ws.id)));
+  if (!org || !p) return c.json({ error: "Not found" }, 404);
+  const sent = await sendInvite(p.email, org.name, ws.name);
+  if (sent) await db.update(schema.portalAccess).set({ invitedAt: new Date() }).where(eq(schema.portalAccess.id, p.id));
+  return c.json({ ok: true, sent });
+});
+
+workspace.patch("/clients/:id/portal/:pid", async (c) => {
+  const { active } = (await c.req.json()) as { active: boolean };
+  await db.update(schema.portalAccess).set({ active: Boolean(active), updatedAt: new Date() }).where(and(eq(schema.portalAccess.id, c.req.param("pid")), eq(schema.portalAccess.workspaceId, wsOf(c).id)));
+  return c.json({ ok: true });
+});
+
+workspace.delete("/clients/:id/portal/:pid", async (c) => {
+  await db.delete(schema.portalAccess).where(and(eq(schema.portalAccess.id, c.req.param("pid")), eq(schema.portalAccess.workspaceId, wsOf(c).id)));
+  return c.json({ ok: true });
+});
+
+/** The team can drop files for a client too (same « À trier » flow). */
+workspace.post("/clients/:id/upload", async (c) => {
+  const org = await orgInWs(c.req.param("id"), wsOf(c).id);
+  if (!org) return c.json({ error: "Not found" }, 404);
+  try {
+    return c.json(await storeUploads(org.id, await c.req.formData(), c.get("user")!.email), 201);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+});
+
+/** Files waiting to be sorted (all clients of the workspace). */
+workspace.get("/uploads", async (c) => {
+  const rows = await db
+    .select({ doc: schema.document, org: schema.organization.name })
+    .from(schema.document)
+    .leftJoin(schema.organization, eq(schema.organization.id, schema.document.organizationId))
+    .where(and(eq(schema.document.workspaceId, wsOf(c).id), eq(schema.document.status, "to_sort")))
+    .orderBy(desc(schema.document.createdAt));
+  return c.json(rows.map((r) => ({ ...r.doc, organizationName: r.org })));
+});
+
+/** File an uploaded document: move it into the client's category folder (optionally renamed). */
+workspace.post("/uploads/:id/sort", async (c) => {
+  const ws = wsOf(c);
+  const [d] = await db.select().from(schema.document).where(and(eq(schema.document.id, c.req.param("id")), eq(schema.document.workspaceId, ws.id)));
+  if (!d?.organizationId || !d.driveFileId) return c.json({ error: "Not found" }, 404);
+  const b = (await c.req.json().catch(() => ({}))) as { category?: string; name?: string };
+  const cat = b.category && CATEGORY_FOLDERS[b.category] ? b.category : (d.category ?? "other");
+  try {
+    const { subject, folderId } = await clientSubfolder(ws, d.organizationId, CATEGORY_FOLDERS[cat] ?? "Autres");
+    const f = await drive.update(subject, d.driveFileId, b.name?.trim() ? { name: b.name.trim() } : {}, { add: folderId, remove: d.parentId ?? undefined });
+    await db.update(schema.document).set({ status: "sorted", category: cat, parentId: folderId, title: f.name ?? d.title, updatedAt: new Date() }).where(eq(schema.document.id, d.id));
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
 });
 
 /* ----------------------------- Drive explorer ----------------------------- */
@@ -104,7 +219,7 @@ workspace.get("/drive/roots", async (c) => {
   const rows = await db
     .select({ driveId: schema.document.driveId, path: schema.document.path })
     .from(schema.document)
-    .where(sql`${schema.document.driveId} is not null`)
+    .where(and(sql`${schema.document.driveId} is not null`, eq(schema.document.workspaceId, wsOf(c).id)))
     .groupBy(schema.document.driveId, schema.document.path)
     .limit(5000);
   const roots = new Map<string, string>();
@@ -115,7 +230,7 @@ workspace.get("/drive/roots", async (c) => {
 workspace.get("/drive/children", async (c) => {
   const parent = c.req.query("parent");
   if (!parent) return c.json({ error: "parent required" }, 400);
-  const rows = await db.select().from(schema.document).where(eq(schema.document.parentId, parent)).orderBy(desc(schema.document.isFolder), asc(schema.document.title));
+  const rows = await db.select().from(schema.document).where(and(eq(schema.document.parentId, parent), eq(schema.document.workspaceId, wsOf(c).id))).orderBy(desc(schema.document.isFolder), asc(schema.document.title));
   return c.json(rows);
 });
 
@@ -124,10 +239,10 @@ workspace.get("/drive/ancestors", async (c) => {
   let id = c.req.query("id") ?? "";
   const chain: { id: string; name: string; path: string | null }[] = [];
   for (let i = 0; i < 30 && id; i++) {
-    const [d] = await db.select().from(schema.document).where(eq(schema.document.driveFileId, id));
+    const [d] = await db.select().from(schema.document).where(and(eq(schema.document.driveFileId, id), eq(schema.document.workspaceId, wsOf(c).id)));
     if (!d) {
       // shared drive root (not indexed as a document)
-      const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(eq(schema.document.driveId, id)).limit(1);
+      const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(and(eq(schema.document.driveId, id), eq(schema.document.workspaceId, wsOf(c).id))).limit(1);
       if (any?.path) chain.unshift({ id, name: any.path.split("/")[0]!, path: any.path.split("/")[0]! });
       break;
     }
@@ -141,7 +256,8 @@ workspace.get("/drive/search", async (c) => {
   const q = (c.req.query("q") ?? "").trim();
   const type = c.req.query("type");
   const parent = c.req.query("parent");
-  const where = [eq(schema.document.isFolder, false), sql`${schema.document.driveFileId} is not null`, sql`coalesce(${schema.document.path}, '') not like '%/_Archives/%'`];
+  const ws = wsOf(c);
+  const where = [eq(schema.document.workspaceId, ws.id), eq(schema.document.isFolder, false), sql`${schema.document.driveFileId} is not null`, sql`coalesce(${schema.document.path}, '') not like '%/_Archives/%'`];
   if (parent) {
     // restrict to the selected folder (recursively)
     const [f] = await db.select({ path: schema.document.path, driveId: schema.document.driveId }).from(schema.document).where(eq(schema.document.driveFileId, parent));
@@ -157,7 +273,7 @@ workspace.get("/drive/search", async (c) => {
     // full-text search through Drive (content), merged with title/path matches
     if (googleConfigured()) {
       const esc = q.replace(/'/g, "\\'");
-      const hits = await drive.list(ADMIN, `trashed=false and (name contains '${esc}' or fullText contains '${esc}')`, { corpora: "allDrives" }).catch(() => []);
+      const hits = await drive.list(await driveSubject(ws), `trashed=false and (name contains '${esc}' or fullText contains '${esc}')`, { corpora: "allDrives" }).catch(() => []);
       ids = hits.map((h) => h.id);
     }
     where.push(or(ilike(schema.document.title, `%${q}%`), ilike(schema.document.path, `%${q}%`), ...(ids?.length ? [inArray(schema.document.driveFileId, ids)] : []))!);
@@ -168,8 +284,8 @@ workspace.get("/drive/search", async (c) => {
 
 /* ------------------------- Explorer actions (Drive) ------------------------ */
 
-async function docByDrive(id: string) {
-  const [d] = await db.select().from(schema.document).where(eq(schema.document.driveFileId, id));
+async function docByDrive(id: string, wsId: string) {
+  const [d] = await db.select().from(schema.document).where(and(eq(schema.document.driveFileId, id), eq(schema.document.workspaceId, wsId)));
   return d;
 }
 
@@ -177,19 +293,19 @@ async function docByDrive(id: string) {
 workspace.patch("/drive/file/:id", async (c) => {
   const id = c.req.param("id");
   const body = (await c.req.json().catch(() => ({}))) as { name?: string; parent?: string };
-  const d = await docByDrive(id);
+  const d = await docByDrive(id, wsOf(c).id);
   if (!d) return c.json({ error: "Not found" }, 404);
   const name = body.name?.trim();
   let parentPath = d.path?.split("/").slice(0, -1).join("/") ?? "";
   if (body.parent && body.parent !== d.parentId) {
-    const target = await docByDrive(body.parent);
+    const target = await docByDrive(body.parent, wsOf(c).id);
     const rootName = body.parent === d.driveId ? (d.path ?? "").split("/")[0] : null;
     if (!target?.isFolder && !rootName) return c.json({ error: "Dossier cible introuvable" }, 400);
     if (target && target.driveId !== d.driveId) return c.json({ error: "Déplacement entre drives non pris en charge" }, 400);
     if (target?.path && d.isFolder && (target.path + "/").startsWith(`${d.path}/`)) return c.json({ error: "Impossible de déplacer un dossier dans lui-même" }, 400);
     parentPath = target?.path ?? rootName!;
   }
-  if (googleConfigured()) await drive.update(ADMIN, id, name ? { name } : {}, body.parent && body.parent !== d.parentId ? { add: body.parent, remove: d.parentId ?? undefined } : undefined);
+  if (googleConfigured()) await drive.update(await driveSubject(wsOf(c)), id, name ? { name } : {}, body.parent && body.parent !== d.parentId ? { add: body.parent, remove: d.parentId ?? undefined } : undefined);
   const newPath = `${parentPath}/${name ?? d.title}`;
   await db
     .update(schema.document)
@@ -205,20 +321,21 @@ workspace.patch("/drive/file/:id", async (c) => {
 /** Create a folder (parent = folder id or shared drive id). Returns the existing one if the name is taken. */
 workspace.post("/drive/folder", async (c) => {
   const { parent, name } = (await c.req.json()) as { parent: string; name: string };
-  const [dup] = await db.select().from(schema.document).where(and(eq(schema.document.parentId, parent), eq(schema.document.title, name), eq(schema.document.isFolder, true)));
+  const ws = wsOf(c);
+  const [dup] = await db.select().from(schema.document).where(and(eq(schema.document.workspaceId, ws.id), eq(schema.document.parentId, parent), eq(schema.document.title, name), eq(schema.document.isFolder, true)));
   if (dup) return c.json({ id: dup.driveFileId, existed: true });
-  const p = await docByDrive(parent);
+  const p = await docByDrive(parent, wsOf(c).id);
   let driveId = p?.driveId ?? null;
   let parentPath = p?.path ?? null;
   if (!p) {
     // shared drive root
-    const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(eq(schema.document.driveId, parent)).limit(1);
+    const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(and(eq(schema.document.driveId, parent), eq(schema.document.workspaceId, ws.id))).limit(1);
     if (!any?.path) return c.json({ error: "Parent introuvable" }, 400);
     driveId = parent;
     parentPath = any.path.split("/")[0]!;
   }
-  const f = await drive.createFolder(ADMIN, name, parent);
-  await db.insert(schema.document).values({ title: name, kind: "document", type: "free", driveFileId: f.id, driveId, parentId: parent, path: `${parentPath}/${name}`, mimeType: FOLDER, isFolder: true });
+  const f = await drive.createFolder(await driveSubject(ws), name, parent);
+  await db.insert(schema.document).values({ workspaceId: ws.id, title: name, kind: "document", type: "free", driveFileId: f.id, driveId, parentId: parent, path: `${parentPath}/${name}`, mimeType: FOLDER, isFolder: true });
   return c.json({ id: f.id, existed: false }, 201);
 });
 
@@ -226,7 +343,7 @@ workspace.post("/drive/folder", async (c) => {
 workspace.post("/drive/shared/:id/rename", async (c) => {
   const id = c.req.param("id");
   const { name } = (await c.req.json()) as { name: string };
-  const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(eq(schema.document.driveId, id)).limit(1);
+  const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(and(eq(schema.document.driveId, id), eq(schema.document.workspaceId, wsOf(c).id))).limit(1);
   const old = any?.path?.split("/")[0];
   if (!old) return c.json({ error: "Drive introuvable" }, 404);
   await drive.updateSharedDrive(ADMIN, id, { name });
@@ -237,18 +354,19 @@ workspace.post("/drive/shared/:id/rename", async (c) => {
 /** Archive = move into the drive's "_Archives" folder (created once, kept out of searches). */
 workspace.post("/drive/file/:id/archive", async (c) => {
   const id = c.req.param("id");
-  const d = await docByDrive(id);
+  const d = await docByDrive(id, wsOf(c).id);
   if (!d?.driveId) return c.json({ error: "Not found" }, 404);
   const root = (d.path ?? "").split("/")[0]!;
+  const subject = await driveSubject(wsOf(c));
   let [arch] = await db.select().from(schema.document).where(and(eq(schema.document.parentId, d.driveId), eq(schema.document.title, "_Archives"), eq(schema.document.isFolder, true)));
   if (!arch) {
-    const f = await drive.createFolder(ADMIN, "_Archives", d.driveId);
+    const f = await drive.createFolder(subject, "_Archives", d.driveId);
     [arch] = await db
       .insert(schema.document)
-      .values({ title: "_Archives", kind: "document", type: "free", driveFileId: f.id, driveId: d.driveId, parentId: d.driveId, path: `${root}/_Archives`, mimeType: "application/vnd.google-apps.folder", isFolder: true })
+      .values({ workspaceId: d.workspaceId, title: "_Archives", kind: "document", type: "free", driveFileId: f.id, driveId: d.driveId, parentId: d.driveId, path: `${root}/_Archives`, mimeType: "application/vnd.google-apps.folder", isFolder: true })
       .returning();
   }
-  await drive.update(ADMIN, id, {}, { add: arch!.driveFileId!, remove: d.parentId ?? undefined });
+  await drive.update(subject, id, {}, { add: arch!.driveFileId!, remove: d.parentId ?? undefined });
   await db.update(schema.document).set({ parentId: arch!.driveFileId, path: `${root}/_Archives/${d.title}`, updatedAt: new Date() }).where(eq(schema.document.id, d.id));
   await db.insert(schema.activity).values({ table: "document", recordId: d.id, action: "updated", comment: `Archivé (était dans ${d.path})`, userId: c.get("user")?.id });
   return c.json({ ok: true });
@@ -257,9 +375,9 @@ workspace.post("/drive/file/:id/archive", async (c) => {
 /** Delete = move to the Drive trash (recoverable 30 days) and remove from the index. */
 workspace.delete("/drive/file/:id", async (c) => {
   const id = c.req.param("id");
-  const d = await docByDrive(id);
+  const d = await docByDrive(id, wsOf(c).id);
   if (!d) return c.json({ error: "Not found" }, 404);
-  await drive.update(ADMIN, id, { trashed: true });
+  await drive.update(await driveSubject(wsOf(c)), id, { trashed: true });
   if (d.isFolder && d.path) await db.delete(schema.document).where(like(schema.document.path, `${d.path.replace(/[%_]/g, "\\$&")}/%`));
   await db.delete(schema.document).where(eq(schema.document.id, d.id));
   return c.json({ ok: true });
@@ -268,20 +386,24 @@ workspace.delete("/drive/file/:id", async (c) => {
 /* ------------------------------ AI + journal ------------------------------ */
 
 workspace.get("/digest", async (c) => {
-  const [row] = await db.select().from(schema.syncState).where(eq(schema.syncState.key, "dashboard:digest"));
-  return c.json(row ? JSON.parse(row.value) : null);
+  const ws = wsOf(c);
+  const [row] = await db.select().from(schema.syncState).where(eq(schema.syncState.key, `dashboard:digest:${ws.code}`));
+  const [legacy] = ws.code === "OTP" && !row ? await db.select().from(schema.syncState).where(eq(schema.syncState.key, "dashboard:digest")) : [];
+  const r = row ?? legacy;
+  return c.json(r ? JSON.parse(r.value) : null);
 });
 
 workspace.post("/sync/:job", async (c) => {
   const job = c.req.param("job");
   if (!["drive-sync", "calendar-sync", "gmail-sync", "qonto-sync", "personal-gmail-sync", "ai-sync"].includes(job)) return c.json({ error: "Unknown job" }, 400);
-  await queue.add(job, { full: c.req.query("full") === "1" }, { removeOnComplete: 20, removeOnFail: 20 });
+  await queue.add(job, { full: c.req.query("full") === "1", workspaceId: wsOf(c).id }, { removeOnComplete: 20, removeOnFail: 20 });
   return c.json({ ok: true });
 });
 
 /** Items needing attention: expenses / invoices without justificatif, uncategorised expenses, bank lines not matched. */
 workspace.get("/alerts", async (c) => {
-  const [ledger, ents] = await Promise.all([loadLedger(), db.select().from(schema.legalEntity)]);
+  const ws = wsOf(c);
+  const [ledger, ents] = await Promise.all([loadLedger(ws.id), db.select().from(schema.legalEntity).where(eq(schema.legalEntity.id, ws.id))]);
   const { expenses: bills, invoices, cash: txs } = ledger;
   const code = new Map(ents.map((e) => [e.id, e.code]));
   const proBills = bills.filter((b) => b.status !== "cancelled" && b.scope === "pro" && (b.paidBy === "entity" || b.paidBy === "reimburse") && Number(b.total) > 0);
@@ -306,7 +428,7 @@ workspace.get("/alerts", async (c) => {
 /** AI spend (Claude): month total vs budget, per feature, per day (30 d), recent errors. */
 workspace.get("/ai-usage", async (c) => {
   const since = new Date(Date.now() - 30 * 864e5);
-  const rows = await db.select().from(schema.aiUsage).where(gte(schema.aiUsage.createdAt, since)).orderBy(desc(schema.aiUsage.createdAt));
+  const rows = await db.select().from(schema.aiUsage).where(gte(schema.aiUsage.createdAt, since)).orderBy(desc(schema.aiUsage.createdAt)); // shared AI budget (all workspaces)
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
