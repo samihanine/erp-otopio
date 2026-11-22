@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Layers } from "lucide-react";
+import { Briefcase, ChevronDown, ChevronRight, Layers, Megaphone, Settings2, Users, Wallet } from "lucide-react";
 import { TABLE_GROUPS, TABLES, type TableKey } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
 import { DatabaseView, VIEW_ICONS } from "@/components/database/database-view";
 import { RecordDetail } from "@/components/database/record-panel";
-import { Icon } from "@/components/ui/misc";
+import { TableTile } from "@/components/ui/misc";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,15 @@ const readCollapsed = (): string[] => {
   } catch {
     return [];
   }
+};
+
+/** colored icon of each group of tables */
+const GROUP_ICON: Record<string, React.ReactNode> = {
+  crm: <Users className="size-4 text-blue-500" />,
+  delivery: <Briefcase className="size-4 text-orange-500" />,
+  finance: <Wallet className="size-4 text-emerald-500" />,
+  marketing: <Megaphone className="size-4 text-pink-500" />,
+  settings: <Settings2 className="size-4 text-zinc-500" />,
 };
 
 /** Tables grouped like the Drive tree of Documents (collapsible groups). */
@@ -41,9 +50,7 @@ export function DatabaseSidebar({ current, viewId }: { current?: TableKey; viewI
             <div key={g.key}>
               <button type="button" onClick={() => toggle(g.key)} className="flex h-8 w-full items-center gap-1 rounded-md pl-1 pr-2 text-left text-[13px] text-muted hover:bg-hover hover:text-fg">
                 <span className="grid size-5 shrink-0 place-items-center text-subtle">{closed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}</span>
-                <span className="grid size-5 shrink-0 place-items-center">
-                  <Layers className="size-4" />
-                </span>
+                <span className="grid size-5 shrink-0 place-items-center">{GROUP_ICON[g.key] ?? <Layers className="size-4" />}</span>
                 <span className="ml-1 truncate">{tr(g.label)}</span>
               </button>
               {!closed &&
@@ -56,9 +63,7 @@ export function DatabaseSidebar({ current, viewId }: { current?: TableKey; viewI
                     className={cn("flex h-8 items-center gap-2 rounded-md pr-2 text-[13px] text-muted hover:bg-hover hover:text-fg", current === d.key && "bg-hover font-medium text-fg")}
                     style={{ paddingLeft: 24 }}
                   >
-                    <span className="grid size-5 shrink-0 place-items-center">
-                      <Icon name={d.icon} className="size-4" />
-                    </span>
+                    <TableTile icon={d.icon} color={d.color} size="sm" />
                     <span className="truncate">{tr(d.label)}</span>
                   </Link>
                 ))}
