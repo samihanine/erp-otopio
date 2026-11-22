@@ -8,14 +8,17 @@ import { db, schema } from "@erp/db";
 import { drive, FOLDER, type DriveFile } from "@erp/google";
 import { ADMIN, getState, log, setState } from "./common";
 
-export const PROJECTS_DRIVE = process.env.DRIVE_PROJECTS_NAME ?? "Projets";
-export const ADMIN_DRIVE = process.env.DRIVE_ADMIN_NAME ?? "Admin Otopio";
+export const PROJECTS_DRIVE = process.env.DRIVE_PROJECTS_NAME ?? "Clients";
+export const ADMIN_DRIVE = process.env.DRIVE_ADMIN_NAME ?? "Administratif";
+/** former names (before the Nov. 2026 reorganisation) */
+const ALIASES: Record<string, string> = { Projets: PROJECTS_DRIVE, "Admin Otopio": ADMIN_DRIVE };
 
 let driveIds: Record<string, string> | null = null;
 export async function sharedDriveIds() {
   if (driveIds) return driveIds;
   const list = await drive.sharedDrives(ADMIN, true);
   driveIds = Object.fromEntries(list.map((d) => [d.name, d.id]));
+  for (const [old, now] of Object.entries(ALIASES)) if (driveIds[old] && !driveIds[now]) driveIds[now] = driveIds[old];
   return driveIds;
 }
 

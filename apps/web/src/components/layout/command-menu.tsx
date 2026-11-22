@@ -79,7 +79,7 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
                 ))}
               </Command.Group>
               <Command.Group heading={tr({ fr: "Créer", en: "Create" })} className={group}>
-                {(["task", "communication", "project", "organization", "person", "invoice", "quote", "bill", "ticket", "article", "post"] as TableKey[]).map((k) => (
+                {(["task", "communication", "project", "organization", "person", "quote", "transaction", "ticket", "article", "post"] as TableKey[]).map((k) => (
                   <Command.Item key={k} value={`create ${tr(TABLES[k].singular)}`} onSelect={() => go(() => createIn(k))} className={item}>
                     <Plus /> {tr({ fr: "Nouveau·elle", en: "New" })} {tr(TABLES[k].singular).toLowerCase()}
                   </Command.Item>
@@ -101,9 +101,8 @@ function useCreateRecordFor() {
     organization: useCreateRecord("organization"),
     person: useCreateRecord("person"),
     communication: useCreateRecord("communication"),
-    invoice: useCreateRecord("invoice"),
+    transaction: useCreateRecord("transaction"),
     quote: useCreateRecord("quote"),
-    bill: useCreateRecord("bill"),
     ticket: useCreateRecord("ticket"),
     article: useCreateRecord("article"),
     post: useCreateRecord("post"),
@@ -111,8 +110,8 @@ function useCreateRecordFor() {
   return async (k: TableKey) => {
     const m = mutations[k];
     if (!m) return;
-    const res = await m.mutateAsync({});
-    if (k === "invoice" || k === "quote") navigate({ to: "/documents/$kind/$id", params: { kind: k, id: res.row.id } });
+    const res = await m.mutateAsync(k === "transaction" ? { kind: "expense" } : {});
+    if (k === "quote") navigate({ to: "/documents/$kind/$id", params: { kind: k, id: res.row.id } });
     else navigate({ to: "/db/$table", params: { table: k }, search: { record: res.row.id } as never });
   };
 }

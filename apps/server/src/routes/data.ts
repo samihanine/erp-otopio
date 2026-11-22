@@ -151,13 +151,24 @@ data.post("/:table", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   let values = sanitize(key, body);
 
-  if (key === "invoice" || key === "quote") {
+  if (key === "transaction") {
+    values.kind ??= "expense";
+    values.side ??= values.kind === "invoice" ? "credit" : "debit";
+    values.date ??= new Date().toISOString().slice(0, 10);
+    values.status ??= values.kind === "invoice" ? "draft" : values.kind === "expense" ? "to_pay" : "paid";
+    // personal expenses default to the freelance activity
+    if (!values.legalEntityId && (values.scope === "perso" || values.scope === "mixed")) {
+      const [shf] = await db.select({ id: schema.legalEntity.id }).from(schema.legalEntity).where(eq(schema.legalEntity.code, "SHF"));
+      if (shf) values.legalEntityId = shf.id;
+    }
+  }
+  if (key === "quote" || (key === "transaction" && values.kind === "invoice")) {
     if (!values.legalEntityId) {
       const [first] = await db.select({ id: schema.legalEntity.id }).from(schema.legalEntity).where(eq(schema.legalEntity.code, "OTP"));
       values.legalEntityId = first?.id;
     }
     if (!values.number) {
-      const n = await nextNumber(key, values.legalEntityId as string, values.issueDate);
+      const n = await nextNumber(key === "quote" ? "quote" : "invoice", values.legalEntityId as string, key === "quote" ? values.issueDate : values.date);
       values.number = n.number;
       values.currency ??= n.currency;
       values.taxes ??= n.taxes;
@@ -165,17 +176,12 @@ data.post("/:table", async (c) => {
     values.currency ??= "CAD";
     values = await withComputedTotals(key, values);
   }
-  if (key === "bill" || key === "transaction") {
+  if (key === "transaction") {
     if (!values.legalEntityId) {
       const [first] = await db.select({ id: schema.legalEntity.id }).from(schema.legalEntity).where(eq(schema.legalEntity.code, "OTP"));
       values.legalEntityId = first?.id;
     }
     values.currency ??= "CAD";
-  }
-  if (key === "transaction") {
-    values.date ??= new Date().toISOString().slice(0, 10);
-    values.side ??= "debit";
-    values.amount ??= 0;
   }
   if ((key === "article" || key === "artifact" || key === "team_member") && !values.slug) {
     const title = String(values.title ?? values.name ?? key);
@@ -185,13 +191,6 @@ data.post("/:table", async (c) => {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "")}-${Math.random().toString(36).slice(2, 6)}`;
-  }
-  if (key === "bill" && !values.legalEntityId) {
-    // personal expenses default to the freelance activity
-    if (values.scope === "perso" || values.scope === "mixed") {
-      const [shf] = await db.select({ id: schema.legalEntity.id }).from(schema.legalEntity).where(eq(schema.legalEntity.code, "SHF"));
-      if (shf) values.legalEntityId = shf.id;
-    }
   }
   const primary = TABLES[key].primary;
   if (values[primary] == null || values[primary] === "") values[primary] = key === "person" ? "Nouveau contact" : "Sans titre";
@@ -235,9 +234,9 @@ data.patch("/:table/:id", async (c) => {
   const todayIso = new Date().toISOString().slice(0, 10);
   if (key === "task" && values.status === "done" && !ex.completedAt && values.completedAt === undefined) values.completedAt = todayIso;
   if (key === "ticket" && (values.status === "resolved" || values.status === "closed") && !ex.resolvedAt) values.resolvedAt = todayIso;
-  if ((key === "invoice" || key === "bill") && values.status === "paid" && !ex.paidAt) {
+  if (key === "transaction" && values.status === "paid" && !ex.paidAt) {
     values.paidAt = todayIso;
-    if (key === "invoice" && values.amountPaid === undefined) values.amountPaid = ex.total;
+    if (values.amountPaid === undefined) values.amountPaid = ex.total;
   }
   if (!Object.keys(values).length) return c.json({ row: existing });
 

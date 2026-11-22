@@ -1,7 +1,7 @@
 /**
  * Gmail → ERP (every 15 min)
  *  - new threads with known contacts → communications
- *  - supplier invoices (PDF + invoice keywords) → bills, PDF stored in Admin drive / <entity> / Factures fournisseurs
+ *  - supplier invoices (PDF + invoice keywords) → bills, PDF stored in Administratif / Dépenses / <entity>
  */
 import { eq } from "drizzle-orm";
 import { db, schema } from "@erp/db";
@@ -94,14 +94,15 @@ async function adminFolder(entityCode: string) {
   const ids = await sharedDriveIds();
   const root = ids[ADMIN_DRIVE];
   if (!root) return null;
-  const entity = entityCode === "MGS" ? "Megascale (FR)" : "Otopio Inc. (CA)";
+  const entity = entityCode === "MGS" ? "Megascale" : entityCode === "OTP" ? "Otopio Inc." : "Freelance";
   const find = async (parent: string, name: string) =>
     (await drive.list(ADMIN, `'${parent}' in parents and name='${name}' and mimeType='${FOLDER}' and trashed=false`, { driveId: root }))[0]?.id ?? (await drive.createFolder(ADMIN, name, parent)).id;
-  return find(await find(root, entity), "Factures fournisseurs");
+  // Administratif / Dépenses / <structure>
+  return find(await find(root, "Dépenses"), entity);
 }
 
 async function detectInvoice(box: string, msgId: string, dir: Dir) {
-  const [dup] = await db.select({ id: schema.bill.id }).from(schema.bill).where(eq(schema.bill.externalRef, `gmail:${msgId}`));
+  const [dup] = await db.select({ id: schema.transaction.id }).from(schema.transaction).where(eq(schema.transaction.externalRef, `gmail:${msgId}`));
   if (dup) return false;
   const m: GmailMessage | null = await gmail.message(box, msgId).catch(() => null);
   if (!m) return false;
@@ -144,15 +145,17 @@ async function detectInvoice(box: string, msgId: string, dir: Dir) {
   }
   const cats = ["software", "hosting", "ai", "subcontracting", "legal", "accounting", "marketing", "office", "travel", "other"];
   const [b] = await db
-    .insert(schema.bill)
+    .insert(schema.transaction)
     .values({
+      kind: "expense",
+      side: "debit",
       label: `${x.supplier}${x.number ? ` — ${x.number}` : ""}`,
       number: x.number,
       legalEntityId: entity.id,
       organizationId: supplier!.id,
       category: (cats.includes(x.category) ? x.category : "other") as never,
       status: x.paid ? "paid" : "to_pay",
-      issueDate: date,
+      date,
       paidAt: x.paid ? date : null,
       currency: x.currency || entity.currency,
       total: x.total ?? 0,
@@ -163,7 +166,7 @@ async function detectInvoice(box: string, msgId: string, dir: Dir) {
       externalRef: `gmail:${msgId}`,
       notes: `Détectée automatiquement dans ${box} (« ${subject} »).`,
     })
-    .returning({ id: schema.bill.id });
-  await log("bill-detected", "bill", b!.id, `Facture ${x.supplier} ${x.total ?? "?"} ${x.currency} détectée (${box}) — PDF rangé dans le Drive admin`, { deleteRecord: { table: "bill", id: b!.id }, trashDriveFile: driveFileId });
+    .returning({ id: schema.transaction.id });
+  await log("bill-detected", "transaction", b!.id, `Facture ${x.supplier} ${x.total ?? "?"} ${x.currency} détectée (${box}) — PDF rangé dans le Drive admin`, { deleteRecord: { table: "transaction", id: b!.id }, trashDriveFile: driveFileId });
   return true;
 }

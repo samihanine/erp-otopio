@@ -5,6 +5,8 @@ import { ExternalLink, Eye, Globe, MousePointerClick, RefreshCw, Sparkles, Timer
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { CONTENT_STATUS_OPTIONS, TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
+import { usePrefValue } from "@/lib/use-media";
+import { SocialView } from "./social";
 import { api } from "@/lib/api";
 import { fmtDate, fmtNumber, useI18n } from "@/lib/i18n";
 import { useList } from "@/lib/data";
@@ -31,6 +33,7 @@ const flag = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(.
 
 export function WebsitePage() {
   const { tr, t, locale } = useI18n();
+  const [tab, setTab] = usePrefValue<"site" | "social">("marketing:tab", "site");
   const [days, setDays] = useState<"7" | "30" | "90">("30");
   const [zone, setZone] = useState("all");
   const { data, isFetching } = useQuery({ queryKey: ["website", days, zone], queryFn: () => api<Analytics>(`/integrations/website/analytics?days=${days}&zone=${zone}`), placeholderData: (p) => p });
@@ -41,9 +44,19 @@ export function WebsitePage() {
   const n = (v: number) => fmtNumber(v, locale);
 
   return (
-    <AppShell title={t("website")}>
+    <AppShell
+      title={t("website")}
+      tabs={[
+        { key: "site", label: tr({ fr: "Site web", en: "Website" }), onClick: () => setTab("site"), active: tab === "site" },
+        { key: "social", label: tr({ fr: "Réseaux sociaux", en: "Social media" }), onClick: () => setTab("social"), active: tab === "social" },
+      ]}
+    >
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
+          {tab === "social" ? (
+            <SocialView />
+          ) : (
+            <>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="grid size-11 place-items-center rounded-2xl bg-navy text-sky-brand">
@@ -173,6 +186,8 @@ export function WebsitePage() {
             <ContentList title={tr(TABLES.article.label)} table="article" rows={articles?.rows ?? []} sub={(r) => (r.targetQuery ? `🎯 ${r.targetQuery}` : "")} />
             <ContentList title={tr(TABLES.post.label)} table="post" rows={posts?.rows ?? []} sub={(r) => String(r.network ?? "")} />
           </div>
+            </>
+          )}
         </div>
       </div>
     </AppShell>

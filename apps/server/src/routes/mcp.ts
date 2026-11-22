@@ -323,7 +323,7 @@ const TOOLS: Tool[] = [
   {
     name: "search_documents",
     title: "Chercher des documents",
-    description: "Recherche plein texte dans les Drive partagés (Projets, Admin Otopio). Utiliser `fetch` avec l'id pour lire le contenu.",
+    description: "Recherche plein texte dans les Drive partagés (Clients, Administratif). Utiliser `fetch` avec l'id pour lire le contenu.",
     inputSchema: { type: "object", properties: { query: str("Mots-clés"), limit: { type: "number" } }, required: ["query"] },
     run: async ({ query, limit = 15 }) => driveSearch(query, limit),
   },

@@ -32,8 +32,6 @@ export const TABLE_MAP: Record<TableKey, PgTable> = {
   task: schema.task,
   ticket: schema.ticket,
   quote: schema.quote,
-  invoice: schema.invoice,
-  bill: schema.bill,
   transaction: schema.transaction,
   article: schema.article,
   post: schema.post,
@@ -215,7 +213,7 @@ export function sanitize(table: TableKey, input: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
   const def = TABLES[table];
   const extraKeys = [
-    ...(table === "quote" || table === "invoice" ? ["taxes", "introduction", "scope", "terms"] : table === "legal_entity" ? ["taxIds", "defaultTaxes", "bankDetails"] : []),
+    ...(table === "quote" ? ["taxes", "introduction", "scope", "terms"] : table === "transaction" ? ["taxes"] : table === "legal_entity" ? ["taxIds", "defaultTaxes", "bankDetails"] : []),
     ...(def.translatable ? ["translations"] : []),
   ];
   for (const [k, raw] of Object.entries(input)) {
@@ -254,7 +252,10 @@ export function sanitize(table: TableKey, input: Record<string, unknown>) {
 
 /** Recomputes money totals for documents whenever lines or taxes change. */
 export async function withComputedTotals(table: TableKey, data: Record<string, unknown>, existing?: Record<string, unknown>) {
-  if (table !== "quote" && table !== "invoice") return data;
+  if (table !== "quote" && table !== "transaction") return data;
+  // ledger rows: only sales invoices are computed from their lines
+  if (table === "transaction" && (data.kind ?? existing?.kind) !== "invoice") return data;
+  if (table === "transaction" && !existing && !("lines" in data)) return data;
   if (!("lines" in data) && !("taxes" in data) && existing) return data;
   const lines = (data.lines ?? existing?.lines ?? []) as never[];
   let taxes = (data.taxes ?? existing?.taxes) as { code: string; label: string; rate: number }[] | undefined;
@@ -278,9 +279,11 @@ export async function nextNumber(kind: "invoice" | "quote", entityId: string, da
   const y = date ? Number(String(date).slice(0, 4)) : current;
   const year = Number.isFinite(y) && y > 1990 ? y : current;
   const prefix = (kind === "invoice" ? e.invoicePrefix : e.quotePrefix).replace("{YYYY}", String(year));
-  const t = kind === "invoice" ? schema.invoice : schema.quote;
-  const existing = await db.select({ number: t.number }).from(t).where(and(eq(t.legalEntityId, entityId), like(t.number, `${prefix}%`)));
-  const maxExisting = existing.reduce((m, r) => Math.max(m, Number(r.number.slice(prefix.length)) || 0), 0);
+  const existing =
+    kind === "invoice"
+      ? await db.select({ number: schema.transaction.number }).from(schema.transaction).where(and(eq(schema.transaction.kind, "invoice"), eq(schema.transaction.legalEntityId, entityId), like(schema.transaction.number, `${prefix}%`)))
+      : await db.select({ number: schema.quote.number }).from(schema.quote).where(and(eq(schema.quote.legalEntityId, entityId), like(schema.quote.number, `${prefix}%`)));
+  const maxExisting = existing.reduce((m, r) => Math.max(m, Number(String(r.number ?? "").slice(prefix.length)) || 0), 0);
   if (year !== current) return { number: `${prefix}${String(maxExisting + 1).padStart(3, "0")}`, currency: e.currency, taxes: e.defaultTaxes };
   const n = Math.max(kind === "invoice" ? e.nextInvoiceNumber : e.nextQuoteNumber, maxExisting + 1);
   await db

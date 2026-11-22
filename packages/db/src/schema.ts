@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -94,8 +95,6 @@ export const organizationStatus = pgEnum("organization_status", ["active", "form
 export const projectStatus = pgEnum("project_status", ["idea", "planned", "in_progress", "on_hold", "delivered", "maintenance", "cancelled"]);
 export const taskStatus = pgEnum("task_status", ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]);
 export const priority = pgEnum("priority", ["low", "medium", "high", "urgent"]);
-export const invoiceStatus = pgEnum("invoice_status", ["draft", "sent", "partial", "paid", "overdue", "lost", "cancelled"]);
-export const billStatus = pgEnum("bill_status", ["to_pay", "scheduled", "paid", "cancelled"]);
 export const billCategory = pgEnum("bill_category", [
   "software",
   "hosting",
@@ -399,86 +398,6 @@ export const quote = pgTable(
   (t) => [uniqueIndex("quote_number_uq").on(t.legalEntityId, t.number)],
 );
 
-export const invoice = pgTable(
-  "invoice",
-  {
-    id: id(),
-    number: text("number").notNull(),
-    title: text("title"),
-    legalEntityId: uuid("legal_entity_id")
-      .notNull()
-      .references(() => legalEntity.id),
-    organizationId: uuid("organization_id").references(() => organization.id, { onDelete: "set null" }),
-    projectId: uuid("project_id").references(() => project.id, { onDelete: "set null" }),
-    quoteId: uuid("quote_id").references(() => quote.id, { onDelete: "set null" }),
-    status: invoiceStatus("status").notNull().default("draft"),
-    issueDate: date("issue_date"),
-    dueDate: date("due_date"),
-    paidAt: date("paid_at"),
-    currency: text("currency").notNull(),
-    lines: jsonb("lines").$type<DocumentLine[]>().notNull().default([]),
-    taxes: jsonb("taxes").$type<AppliedTax[]>().notNull().default([]),
-    subtotal: money("subtotal").notNull().default(0),
-    taxTotal: money("tax_total").notNull().default(0),
-    total: money("total").notNull().default(0),
-    amountPaid: money("amount_paid").notNull().default(0),
-    notes: text("notes"),
-    externalRef: text("external_ref"), // Qonto / QuickBooks id
-    googleDocId: text("google_doc_id"),
-    fileUrl: text("file_url"),
-    ...timestamps,
-  },
-  (t) => [
-    uniqueIndex("invoice_number_uq").on(t.legalEntityId, t.number),
-    index("invoice_org_idx").on(t.organizationId),
-    index("invoice_status_idx").on(t.status),
-  ],
-);
-
-export const bill = pgTable(
-  "bill",
-  {
-    id: id(),
-    label: text("label").notNull(),
-    number: text("number"),
-    legalEntityId: uuid("legal_entity_id")
-      .notNull()
-      .references(() => legalEntity.id),
-    organizationId: uuid("organization_id").references(() => organization.id, { onDelete: "set null" }),
-    projectId: uuid("project_id").references(() => project.id, { onDelete: "set null" }),
-    category: billCategory("category").notNull().default("software"),
-    status: billStatus("status").notNull().default("to_pay"),
-    recurrence: recurrence("recurrence").notNull().default("none"),
-    issueDate: date("issue_date"),
-    dueDate: date("due_date"),
-    paidAt: date("paid_at"),
-    currency: text("currency").notNull(),
-    subtotal: money("subtotal").notNull().default(0),
-    taxTotal: money("tax_total").notNull().default(0),
-    total: money("total").notNull().default(0),
-    paymentMethod: text("payment_method"),
-    cardId: uuid("card_id").references(() => creditCard.id, { onDelete: "set null" }),
-    /** who bears the cost: the billing entity, a client (re-billed / paid with the client's card) or someone else */
-    paidBy: text("paid_by").notNull().default("entity"),
-    /** client the expense relates to (e.g. hosting of a client's app) */
-    clientId: uuid("client_id").references(() => organization.id, { onDelete: "set null" }),
-    scope: expenseScope("scope").notNull().default("pro"),
-    /** recurring subscription still running (shown in the subscriptions view) */
-    active: boolean("active").notNull().default(false),
-    fileUrl: text("file_url"),
-    driveFileId: text("drive_file_id"),
-    externalRef: text("external_ref"),
-    notes: text("notes"),
-    ...timestamps,
-  },
-  (t) => [
-    index("bill_entity_idx").on(t.legalEntityId),
-    index("bill_org_idx").on(t.organizationId),
-    uniqueIndex("bill_external_ref_uq").on(t.externalRef),
-  ],
-);
-
-/** Payment cards (never the full number: brand + last 4 digits only). */
 export const creditCard = pgTable("credit_card", {
   id: id(),
   label: text("label").notNull(),
@@ -494,30 +413,75 @@ export const creditCard = pgTable("credit_card", {
   ...timestamps,
 });
 
-/** Bank / accounting feed lines (Qonto, QuickBooks) used for reconciliation. */
+/**
+ * Single financial ledger: every income and expense lives here.
+ *  - kind "invoice"  : sales invoice issued to a client (numbered, line items, PDF)          — side credit
+ *  - kind "expense"  : supplier invoice / receipt / card purchase (justificatif in fileUrl)    — side debit
+ *  - kind "movement" : bank movement without a business document (capital, transfers, taxes…)
+ * Bank feed data (Qonto / QuickBooks) is merged into the row it pays (bankRef, paidAt, counterparty);
+ * extra partial payments stay as "movement" rows pointing to their document through parentId.
+ */
 export const transaction = pgTable(
   "transaction",
   {
     id: id(),
+    kind: text("kind").notNull().default("movement"),
+    side: transactionSide("side").notNull(),
     legalEntityId: uuid("legal_entity_id")
       .notNull()
       .references(() => legalEntity.id),
+    /** issue date for documents, value date for bank movements */
     date: date("date").notNull(),
     label: text("label").notNull(),
-    counterparty: text("counterparty"),
-    side: transactionSide("side").notNull(),
-    amount: money("amount").notNull(),
+    number: text("number"),
+    organizationId: uuid("organization_id").references(() => organization.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => project.id, { onDelete: "set null" }),
+    quoteId: uuid("quote_id").references(() => quote.id, { onDelete: "set null" }),
+    /** client the expense relates to (e.g. hosting of a client's app) */
+    clientId: uuid("client_id").references(() => organization.id, { onDelete: "set null" }),
+    parentId: uuid("parent_id"),
+    category: billCategory("category"),
+    /** draft | sent | partial | paid | overdue | lost | to_pay | scheduled | cancelled */
+    status: text("status").notNull().default("paid"),
+    dueDate: date("due_date"),
+    paidAt: date("paid_at"),
     currency: text("currency").notNull(),
-    source: accountingProvider("source").notNull().default("none"),
-    externalRef: text("external_ref"),
-    /** operating (default) | capital (share capital in/out) | transfer | tax — only "operating" credits count as revenue collected */
+    lines: jsonb("lines").$type<DocumentLine[]>().notNull().default([]),
+    taxes: jsonb("taxes").$type<AppliedTax[]>().notNull().default([]),
+    subtotal: money("subtotal").notNull().default(0),
+    taxTotal: money("tax_total").notNull().default(0),
+    total: money("total").notNull().default(0),
+    amountPaid: money("amount_paid").notNull().default(0),
+    recurrence: recurrence("recurrence").notNull().default("none"),
+    paymentMethod: text("payment_method"),
+    cardId: uuid("card_id").references(() => creditCard.id, { onDelete: "set null" }),
+    /** who bears the cost: entity | client | reimburse (paid with a personal card) | other */
+    paidBy: text("paid_by").notNull().default("entity"),
+    scope: expenseScope("scope").notNull().default("pro"),
+    /** recurring subscription still running */
+    active: boolean("active").notNull().default(false),
+    /** operating (default) | capital | transfer | tax — only operating credits count as revenue */
     nature: text("nature").notNull().default("operating"),
-    invoiceId: uuid("invoice_id").references(() => invoice.id, { onDelete: "set null" }),
-    billId: uuid("bill_id").references(() => bill.id, { onDelete: "set null" }),
-    note: text("note"),
+    counterparty: text("counterparty"),
+    source: accountingProvider("source").notNull().default("none"),
+    /** bank feed id (e.g. "qonto:80e8f7") */
+    bankRef: text("bank_ref"),
+    /** origin of the document (e.g. "gmail:<msgId>", QuickBooks id) */
+    externalRef: text("external_ref"),
+    fileUrl: text("file_url"),
+    driveFileId: text("drive_file_id"),
+    googleDocId: text("google_doc_id"),
+    notes: text("notes"),
     ...timestamps,
   },
-  (t) => [index("transaction_entity_idx").on(t.legalEntityId), index("transaction_date_idx").on(t.date)],
+  (t) => [
+    index("transaction_entity_idx").on(t.legalEntityId),
+    index("transaction_date_idx").on(t.date),
+    index("transaction_kind_idx").on(t.kind),
+    index("transaction_org_idx").on(t.organizationId),
+    uniqueIndex("transaction_number_uq").on(t.legalEntityId, t.number).where(sql`kind = 'invoice'`),
+    uniqueIndex("transaction_bank_ref_uq").on(t.bankRef),
+  ],
 );
 
 /* -------------------------------------------------------------------------- */
@@ -643,9 +607,9 @@ export const document = pgTable("document", {
   isFolder: boolean("is_folder").notNull().default(false),
   modifiedAt: timestamp("modified_at", { withTimezone: true }),
   // Foreign keys to business records using this file
-  invoiceId: uuid("invoice_id").references(() => invoice.id, { onDelete: "set null" }),
+  invoiceId: uuid("invoice_id").references(() => transaction.id, { onDelete: "set null" }),
   quoteId: uuid("quote_id").references(() => quote.id, { onDelete: "set null" }),
-  billId: uuid("bill_id").references(() => bill.id, { onDelete: "set null" }),
+  billId: uuid("bill_id").references(() => transaction.id, { onDelete: "set null" }),
   communicationId: uuid("communication_id"),
   ...timestamps,
 });

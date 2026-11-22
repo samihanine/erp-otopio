@@ -5,7 +5,7 @@
  *  - new mail is sorted into structured labels  <ENTITY>/Factures fournisseurs | Banque | Clients | Administratif | Autres
  *  - supplier invoices (PDF) → matched to an existing bill without justificatif (same amount ±0.02, date ±7 d) or created
  */
-import { eq, like } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { S3Client } from "bun";
 import { db, schema } from "@erp/db";
 import { ai, aiEnabled, getState, log, setState } from "./common";
@@ -98,8 +98,8 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     if (!(page = r.nextPageToken)) break;
   }
   const stats = { seen: 0, labelled: 0, billsAttached: 0, billsCreated: 0, aiErrors: 0 };
-  const bills = await db.select().from(schema.bill).where(eq(schema.bill.legalEntityId, entity.id));
-  const invs = await db.select({ org: schema.invoice.organizationId }).from(schema.invoice).where(eq(schema.invoice.legalEntityId, entity.id));
+  const bills = await db.select().from(schema.transaction).where(and(eq(schema.transaction.legalEntityId, entity.id), eq(schema.transaction.kind, "expense")));
+  const invs = await db.select({ org: schema.transaction.organizationId }).from(schema.transaction).where(and(eq(schema.transaction.legalEntityId, entity.id), eq(schema.transaction.kind, "invoice")));
   const orgs = await db.select().from(schema.organization);
   const clientIds = new Set(invs.map((i) => i.org));
   const GENERIC = /^(gmail|hotmail|outlook|yahoo|icloud|live|free|orange|wanadoo|laposte)\./;
@@ -143,22 +143,22 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     }
     if (!x.isSupplierInvoice) continue;
     const date = x.date ?? new Date(Number(m.internalDate)).toISOString().slice(0, 10);
-    const same = (b: (typeof bills)[number]) => b.currency === (x.currency || b.currency) && x.total != null && Math.abs(Number(b.total) - x.total) < 0.02 && Math.abs(+new Date(b.issueDate ?? date) - +new Date(date)) < 7 * 864e5;
+    const same = (b: (typeof bills)[number]) => b.currency === (x.currency || b.currency) && x.total != null && Math.abs(Number(b.total) - x.total) < 0.02 && Math.abs(+new Date(b.date ?? date) - +new Date(date)) < 7 * 864e5;
     if (bills.some((b) => b.fileUrl && same(b)) || bills.some((b) => b.externalRef === `gmail:${id}`)) continue; // already documented
     const att = await g<{ data: string }>(`messages/${id}/attachments/${pdfs[0]!.body!.attachmentId}`);
     const data = new Uint8Array(Buffer.from(att.data, "base64url"));
     const name = `${date} — ${x.supplier} — Facture — ${x.number ?? pdfs[0]!.filename}`.replace(/\.pdf$/i, "") + ".pdf";
     const k = `bill/${crypto.randomUUID()}-${name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.-]+/g, "_")}`;
     await s3().write(k, data, { type: "application/pdf" });
-    const [f] = await db.insert(schema.file).values({ key: k, name, size: data.byteLength, mimeType: "application/pdf", table: "bill" }).returning();
+    const [f] = await db.insert(schema.file).values({ key: k, name, size: data.byteLength, mimeType: "application/pdf", table: "transaction" }).returning();
     const url = `${(E.APP_URL ?? "https://erp.otopio.ca").replace(/\/$/, "")}/api/files/${f!.id}`;
     // anti-doublon: attach to the Qonto-imported bill when it is the same expense
-    const twin = bills.find((b) => !b.fileUrl && b.currency === (x.currency || b.currency) && x.total != null && Math.abs(Number(b.total) - x.total) < 0.02 && Math.abs(+new Date(b.issueDate ?? date) - +new Date(date)) < 7 * 864e5);
+    const twin = bills.find((b) => !b.fileUrl && b.currency === (x.currency || b.currency) && x.total != null && Math.abs(Number(b.total) - x.total) < 0.02 && Math.abs(+new Date(b.date ?? date) - +new Date(date)) < 7 * 864e5);
     if (twin) {
-      await db.update(schema.bill).set({ fileUrl: url, number: twin.number ?? x.number, taxTotal: Number(twin.taxTotal) || x.tax || 0 }).where(eq(schema.bill.id, twin.id));
+      await db.update(schema.transaction).set({ fileUrl: url, number: twin.number ?? x.number, taxTotal: Number(twin.taxTotal) || x.tax || 0 }).where(eq(schema.transaction.id, twin.id));
       twin.fileUrl = url;
       stats.billsAttached++;
-      await log("bill-receipt", "bill", twin.id, `Justificatif ${x.supplier} (${email}) rattaché à « ${twin.label} »`);
+      await log("bill-receipt", "transaction", twin.id, `Justificatif ${x.supplier} (${email}) rattaché à « ${twin.label} »`);
       continue;
     }
     const dup = bills.find((b) => b.externalRef === `gmail:${id}`);
@@ -167,12 +167,12 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     const [org] = await db.select().from(schema.organization).where(eq(schema.organization.name, x.supplier));
     const supplier = org ?? (await db.insert(schema.organization).values({ name: x.supplier, type: "supplier", status: "active", notes: "Créé automatiquement depuis une facture reçue." }).returning())[0]!;
     const [b] = await db
-      .insert(schema.bill)
-      .values({ label: `${x.supplier}${x.number ? ` — ${x.number}` : ""}`, number: x.number, legalEntityId: entity.id, organizationId: supplier.id, category: (cats.includes(x.category) ? x.category : "other") as never, status: "to_pay", issueDate: date, currency: x.currency || entity.currency, total: x.total ?? 0, subtotal: (x.total ?? 0) - (x.tax ?? 0), taxTotal: x.tax ?? 0, fileUrl: url, externalRef: `gmail:${id}`, notes: `Détectée automatiquement dans ${email} (« ${subject} »).` })
-      .returning({ id: schema.bill.id });
+      .insert(schema.transaction)
+      .values({ kind: "expense", side: "debit", label: `${x.supplier}${x.number ? ` — ${x.number}` : ""}`, number: x.number, legalEntityId: entity.id, organizationId: supplier.id, category: (cats.includes(x.category) ? x.category : "other") as never, status: "to_pay", date, currency: x.currency || entity.currency, total: x.total ?? 0, subtotal: (x.total ?? 0) - (x.tax ?? 0), taxTotal: x.tax ?? 0, fileUrl: url, externalRef: `gmail:${id}`, notes: `Détectée automatiquement dans ${email} (« ${subject} »).` })
+      .returning({ id: schema.transaction.id });
     bills.push({ id: b!.id, fileUrl: url, externalRef: `gmail:${id}` } as never);
     stats.billsCreated++;
-    await log("bill-detected", "bill", b!.id, `Facture ${x.supplier} ${x.total ?? "?"} ${x.currency} détectée (${email}, ${code})`, { deleteRecord: { table: "bill", id: b!.id } });
+    await log("bill-detected", "transaction", b!.id, `Facture ${x.supplier} ${x.total ?? "?"} ${x.currency} détectée (${email}, ${code})`, { deleteRecord: { table: "transaction", id: b!.id } });
   }
   await setState(stateKey, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10).replace(/-/g, "/"));
   return stats;

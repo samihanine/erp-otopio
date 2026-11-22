@@ -36,31 +36,34 @@ documents.patch("/doc/:id", async (c) => {
 });
 
 export async function buildRenderInput(kind: "quote" | "invoice", id: string, locale: "fr" | "en" = "fr"): Promise<RenderInput | null> {
-  const table = kind === "quote" ? schema.quote : schema.invoice;
-  const [doc] = await db.select().from(table).where(eq(table.id, id));
+  let doc: { number: string | null; title: string | null; issueDate: string | null; dueDate: string | null; currency: string; lines: never[]; taxes: { code: string; label: string; rate: number }[]; amountPaid: number; legalEntityId: string; organizationId: string | null; contactId: string | null; introduction: string | null; scope: string | null; terms: string | null } | null = null;
+  if (kind === "quote") {
+    const [q] = await db.select().from(schema.quote).where(eq(schema.quote.id, id));
+    if (q) doc = { number: q.number, title: q.title, issueDate: q.issueDate, dueDate: q.validUntil, currency: q.currency, lines: q.lines as never[], taxes: q.taxes, amountPaid: 0, legalEntityId: q.legalEntityId, organizationId: q.organizationId, contactId: q.contactId, introduction: q.introduction, scope: q.scope, terms: q.terms };
+  } else {
+    const [i] = await db.select().from(schema.transaction).where(eq(schema.transaction.id, id));
+    if (i) doc = { number: i.number, title: i.label, issueDate: i.date, dueDate: i.dueDate, currency: i.currency, lines: i.lines as never[], taxes: i.taxes, amountPaid: i.amountPaid, legalEntityId: i.legalEntityId, organizationId: i.organizationId, contactId: null, introduction: null, scope: null, terms: null };
+  }
   if (!doc) return null;
   const [entity] = await db.select().from(schema.legalEntity).where(eq(schema.legalEntity.id, doc.legalEntityId));
   const client = doc.organizationId ? (await db.select().from(schema.organization).where(eq(schema.organization.id, doc.organizationId)))[0] : null;
-  const contactId = kind === "quote" ? (doc as typeof schema.quote.$inferSelect).contactId : null;
-  const contact = contactId ? (await db.select().from(schema.person).where(eq(schema.person.id, contactId)))[0] : null;
+  const contact = doc.contactId ? (await db.select().from(schema.person).where(eq(schema.person.id, doc.contactId)))[0] : null;
   if (!entity) return null;
-  const q = doc as typeof schema.quote.$inferSelect;
-  const i = doc as typeof schema.invoice.$inferSelect;
   return {
     kind,
     locale,
-    number: doc.number,
+    number: doc.number ?? "",
     title: doc.title,
     issueDate: doc.issueDate,
-    dueDate: kind === "quote" ? q.validUntil : i.dueDate,
+    dueDate: doc.dueDate,
     currency: doc.currency,
     lines: doc.lines,
     taxes: doc.taxes.map(({ code, label, rate }) => ({ code, label, rate })),
-    amountPaid: kind === "invoice" ? i.amountPaid : 0,
-    introduction: kind === "quote" ? q.introduction : null,
-    scope: kind === "quote" ? q.scope : null,
-    terms: kind === "quote" ? q.terms : null,
-    notes: kind === "invoice" ? null : null,
+    amountPaid: doc.amountPaid,
+    introduction: doc.introduction,
+    scope: doc.scope,
+    terms: doc.terms,
+    notes: null,
     entity,
     client,
     contactName: contact ? `${contact.firstName} ${contact.lastName ?? ""}`.trim() : null,
@@ -84,13 +87,19 @@ documents.get("/:kind/:id/pdf", async (c) => {
   const input = await buildRenderInput(kind, c.req.param("id"), locale);
   if (!input) return c.json({ error: "Not found" }, 404);
   try {
-    const table = kind === "quote" ? schema.quote : schema.invoice;
-    const [rec] = await db.select({ org: table.organizationId, issueDate: table.issueDate }).from(table).where(eq(table.id, c.req.param("id")));
+    const id = c.req.param("id");
+    const [rec] =
+      kind === "quote"
+        ? await db.select({ org: schema.quote.organizationId, issueDate: schema.quote.issueDate }).from(schema.quote).where(eq(schema.quote.id, id))
+        : await db.select({ org: schema.transaction.organizationId, issueDate: schema.transaction.date }).from(schema.transaction).where(eq(schema.transaction.id, id));
     const fileName = `${rec?.issueDate ?? new Date().toISOString().slice(0, 10)} — ${input.client?.name ?? "Client"} — ${kind === "quote" ? "Devis" : "Facture"} — ${input.number}.pdf`.replace(/[\/]/g, "-");
     const job = await queue.add("render-pdf", { kind, id: c.req.param("id"), html: renderDocumentHtml(input), organizationId: rec?.org ?? null, fileName }, { removeOnComplete: 50, removeOnFail: 50 });
     const result = (await job.waitUntilFinished(queueEvents, 45_000)) as { pdfBase64: string; url?: string | null };
     const buf = Buffer.from(result.pdfBase64, "base64");
-    if (result.url) await db.update(table).set({ fileUrl: result.url }).where(eq(table.id, c.req.param("id")));
+    if (result.url) {
+      if (kind === "quote") await db.update(schema.quote).set({ fileUrl: result.url }).where(eq(schema.quote.id, id));
+      else await db.update(schema.transaction).set({ fileUrl: result.url }).where(eq(schema.transaction.id, id));
+    }
     return new Response(buf, {
       headers: {
         "content-type": "application/pdf",
@@ -109,16 +118,18 @@ documents.post("/quote/:id/invoice", async (c) => {
   const { nextNumber } = await import("../lib/data");
   const n = await nextNumber("invoice", q.legalEntityId);
   const [inv] = await db
-    .insert(schema.invoice)
+    .insert(schema.transaction)
     .values({
+      kind: "invoice",
+      side: "credit",
       number: n.number,
-      title: q.title,
+      label: q.title,
       legalEntityId: q.legalEntityId,
       organizationId: q.organizationId,
       projectId: q.projectId,
       quoteId: q.id,
       status: "draft",
-      issueDate: new Date().toISOString().slice(0, 10),
+      date: new Date().toISOString().slice(0, 10),
       dueDate: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
       currency: q.currency,
       lines: q.lines,

@@ -24,7 +24,7 @@ export function OptionBadge({ option, className }: { option?: SelectOption | nul
   const { tr } = useI18n();
   if (!option) return null;
   return (
-    <span className={cn("inline-flex h-[22px] max-w-full items-center gap-1.5 truncate rounded-md px-1.5 text-xs font-medium ring-1 ring-inset", BADGE[option.color], className)}>
+    <span className={cn("inline-flex h-5 max-w-full items-center gap-1.5 truncate rounded-md px-1.5 text-[11.5px] font-medium ring-1 ring-inset", BADGE[option.color], className)}>
       <span className={cn("size-1.5 shrink-0 rounded-full", DOT[option.color])} />
       <span className="truncate">{tr(option.label)}</span>
     </span>
@@ -32,7 +32,7 @@ export function OptionBadge({ option, className }: { option?: SelectOption | nul
 }
 
 export function Chip({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cn("inline-flex h-[22px] max-w-full items-center gap-1 truncate rounded-md bg-surface-2 px-1.5 text-xs font-medium text-fg ring-1 ring-inset ring-border", className)}>{children}</span>;
+  return <span className={cn("inline-flex h-5 max-w-full items-center gap-1 truncate rounded-md bg-surface-2 px-1.5 text-[11.5px] font-medium text-fg ring-1 ring-inset ring-border", className)}>{children}</span>;
 }
 
 const AVATAR_COLORS = ["bg-emerald-100 text-emerald-700", "bg-violet-100 text-violet-700", "bg-sky-100 text-sky-700", "bg-amber-100 text-amber-800", "bg-rose-100 text-rose-700", "bg-indigo-100 text-indigo-700", "bg-teal-100 text-teal-700"];

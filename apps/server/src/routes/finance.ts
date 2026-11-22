@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { db, schema } from "@erp/db";
 import { FX_TO_CAD, round2, toCAD } from "@erp/shared";
 import type { AppEnv } from "../lib/types";
+import { loadLedger } from "../lib/ledger";
 import { eq as eqOp } from "drizzle-orm";
 import { computeMGS, computeOTP, DEFAULTS, fiscalYear, type TaxConfig } from "../lib/taxes";
 import { env } from "../lib/env";
@@ -33,13 +34,12 @@ finance.get("/summary", async (c) => {
   const inYear = (d: string | null | undefined, _y?: unknown) => !!d && (year === "all" || d.slice(0, 4) === String(year)) && (!months.length || months.includes(Number(d.slice(5, 7))));
   const entityParam = c.req.query("entity") ?? "all";
 
-  const [entities, invoices, bills, txs, orgs] = await Promise.all([
+  const [entities, ledger, orgs] = await Promise.all([
     db.select().from(schema.legalEntity),
-    db.select().from(schema.invoice),
-    db.select().from(schema.bill),
-    db.select().from(schema.transaction),
+    loadLedger(),
     db.select({ id: schema.organization.id, name: schema.organization.name }).from(schema.organization),
   ]);
+  const { invoices, expenses: bills, cash: txs } = ledger;
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
   const entity = entities.find((e) => e.id === entityParam);
   const fx = await fxRates();
@@ -118,7 +118,7 @@ finance.get("/summary", async (c) => {
     .slice(0, 6);
 
   const byCategoryMap = new Map<string, number>();
-  for (const b of bl) byCategoryMap.set(b.category, (byCategoryMap.get(b.category) ?? 0) + conv(b.total, b.currency));
+  for (const b of bl) byCategoryMap.set(b.category ?? "other", (byCategoryMap.get(b.category ?? "other") ?? 0) + conv(b.total, b.currency));
   const byCategory = [...byCategoryMap.entries()].map(([category, amount]) => ({ category, amount: round2(amount) })).sort((a, b) => b.amount - a.amount);
 
   const byEntity = entities.map((e) => {
@@ -168,7 +168,7 @@ finance.get("/summary", async (c) => {
 
   // Personal life spending (scope perso/mixed) — reported apart from the business
   const personalByCat = new Map<string, number>();
-  for (const b of perso) personalByCat.set(b.category, (personalByCat.get(b.category) ?? 0) + conv(b.total, b.currency));
+  for (const b of perso) personalByCat.set(b.category ?? "other", (personalByCat.get(b.category ?? "other") ?? 0) + conv(b.total, b.currency));
   const personal = {
     total: sum(perso.map((b) => conv(b.total, b.currency))),
     count: perso.length,
@@ -212,10 +212,10 @@ finance.get("/summary", async (c) => {
 
   // Unified ledger of the period: expenses (bills) + revenues (invoices), with justificatif status
   const code = new Map(entities.map((e) => [e.id, e.code]));
-  const ledger = [
+  const ledgerRows = [
     ...bl.map((b) => ({
       id: b.id,
-      table: "bill" as const,
+      table: "transaction" as const,
       date: b.issueDate,
       label: b.label,
       party: orgName.get(b.organizationId ?? "") ?? null,
@@ -231,7 +231,7 @@ finance.get("/summary", async (c) => {
     })),
     ...issued.map((i) => ({
       id: i.id,
-      table: "invoice" as const,
+      table: "transaction" as const,
       date: i.issueDate,
       label: `${i.number}${i.title ? ` — ${i.title}` : ""}`,
       party: orgName.get(i.organizationId ?? "") ?? null,
@@ -264,7 +264,7 @@ finance.get("/summary", async (c) => {
 
   return c.json({
     series: { month: series(7), year: series(4) },
-    ledger,
+    ledger: ledgerRows,
     receivables,
     year,
     months,
@@ -298,7 +298,8 @@ async function saveTaxConfig(code: string, cfg: TaxConfig) {
 
 finance.get("/taxes", async (c) => {
   const year = Number(c.req.query("year") ?? new Date().getFullYear());
-  const [entities, invoices, bills] = await Promise.all([db.select().from(schema.legalEntity), db.select().from(schema.invoice), db.select().from(schema.bill)]);
+  const [entities, ledger] = await Promise.all([db.select().from(schema.legalEntity), loadLedger()]);
+  const { invoices, expenses: bills } = ledger;
   const fx = await fxRates();
   const out = [];
   for (const code of ["OTP", "MGS"] as const) {

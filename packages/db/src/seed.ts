@@ -40,8 +40,6 @@ const BUSINESS_TABLES = [
   "post",
   "article",
   "transaction",
-  "bill",
-  "invoice",
   "quote",
   "communication",
   "ticket",
@@ -420,11 +418,20 @@ async function main() {
   /* ------------------------------------------------------------------ */
   /*  Invoices                                                          */
   /* ------------------------------------------------------------------ */
-  type InvIn = typeof s.invoice.$inferInsert;
-  const I = (i: Omit<InvIn, "subtotal" | "taxTotal" | "total" | "taxes" | "lines">, lines: DocumentLine[], taxes: TaxRate[]): InvIn => ({ ...i, ...totals(lines, taxes) });
+  type TxIn = typeof s.transaction.$inferInsert;
+  type InvSeed = Omit<TxIn, "subtotal" | "taxTotal" | "total" | "taxes" | "lines" | "kind" | "side" | "date" | "label"> & { title?: string; issueDate?: string };
+  /** sales invoice → ledger row (kind "invoice") */
+  const I = ({ title, issueDate, ...i }: InvSeed, lines: DocumentLine[], taxes: TaxRate[]): TxIn => ({
+    ...i,
+    ...totals(lines, taxes),
+    kind: "invoice",
+    side: "credit",
+    date: issueDate ?? new Date().toISOString().slice(0, 10),
+    label: title ?? String(i.number),
+  });
   const drive = (id: string) => `https://drive.google.com/file/d/${id}/view`;
   const invoices = await db
-    .insert(s.invoice)
+    .insert(s.transaction)
     .values([
       // Megascale (FR) — Qonto
       I(
@@ -478,13 +485,12 @@ async function main() {
         TAX_QC,
       ),
     ])
-    .returning({ id: s.invoice.id, number: s.invoice.number });
-  const iid = (n: string) => invoices.find((x) => x.number === n)?.id;
+    .returning({ id: s.transaction.id, number: s.transaction.number });
 
   /* ------------------------------------------------------------------ */
   /*  Bills                                                             */
   /* ------------------------------------------------------------------ */
-  type BillIn = typeof s.bill.$inferInsert;
+  type BillIn = Omit<TxIn, "kind" | "side" | "date"> & { issueDate?: string };
   const gw = (month: number, num: string | null, fileId?: string): BillIn => {
     const mm = String(month).padStart(2, "0");
     return {
@@ -506,9 +512,8 @@ async function main() {
       driveFileId: fileId ?? null,
     };
   };
-  const bills = await db
-    .insert(s.bill)
-    .values([
+  const E = ({ issueDate, ...b }: BillIn): TxIn => ({ ...b, kind: "expense", side: "debit", date: issueDate ?? new Date().toISOString().slice(0, 10), source: "quickbooks", amountPaid: b.status === "paid" ? (b.total ?? 0) : 0 });
+  const billSeeds: BillIn[] = [
       gw(3, "5524589125", "1mlQPlhColXd5KQhHjlQh11YGJ1vTihHk"),
       gw(4, "5554900196", "16nrI9ygusOFImexU8APTof82zKYtyfKR"),
       gw(5, "5584009104", "10afi0lb6Vx_hFBQlD56BOok-ij0ovKoW"),
@@ -525,32 +530,15 @@ async function main() {
       { label: "QuickBooks — abonnement Intuit (mai 2026)", legalEntityId: otp.id, organizationId: org.intuit, category: "accounting", status: "paid", recurrence: "monthly", issueDate: "2026-05-01", currency: "CAD", total: 0, notes: "Montant à compléter.", driveFileId: "1Ts8akDdtrOsEnSXLqxLFnXAgfMNzMl4abi3OX6g4mOg" },
       { label: "Sous-traitance — virement Interac (mai 2026)", legalEntityId: otp.id, category: "subcontracting", status: "paid", issueDate: "2026-05-15", currency: "CAD", total: 0, notes: "Montant à compléter.", driveFileId: "1FTlCzt_PS45sDNNlao_6irsJL1xeXVRiUSWZ3hnGitI" },
       { label: "Groupe TCJ — convention de mandat (facture impayée)", legalEntityId: otp.id, organizationId: org.tcj, category: "legal", status: "to_pay", issueDate: "2026-07-15", currency: "CAD", total: 0, notes: "Honoraires selon convention de mandat — montant à compléter." },
-    ])
-    .returning({ id: s.bill.id, label: s.bill.label, total: s.bill.total, issueDate: s.bill.issueDate });
+  ];
+  const bills = await db.insert(s.transaction).values(billSeeds.map(E)).returning({ id: s.transaction.id });
 
   /* ------------------------------------------------------------------ */
   /*  Bank transactions (sample feed for reconciliation)                */
   /* ------------------------------------------------------------------ */
   await db.insert(s.transaction).values([
-    { legalEntityId: mgs.id, date: "2026-05-21", label: "VIR THEOASSO F-2026-001", counterparty: "THEOASSO", side: "credit", amount: 3283.2, currency: "EUR", source: "qonto", invoiceId: iid("F-2026-001"), note: "Date de paiement estimée." },
-    { legalEntityId: otp.id, date: "2026-04-01", label: "Virement Interac — SMOG Inc.", counterparty: "SMOG Inc.", side: "credit", amount: 1207.24, currency: "CAD", source: "quickbooks", invoiceId: iid("SMO-26-01"), note: "Date estimée." },
-    { legalEntityId: otp.id, date: "2026-04-11", label: "Virement — Coordia", counterparty: "Coordia", side: "credit", amount: 3449.25, currency: "CAD", source: "quickbooks", invoiceId: iid("FAC-2026-004") },
-    { legalEntityId: otp.id, date: "2026-02-25", label: "Virement — Heeroo acompte", counterparty: "9522-6452 Québec Inc.", side: "credit", amount: 8000, currency: "CAD", source: "quickbooks", invoiceId: iid("HEE-0426-01") },
-    { legalEntityId: otp.id, date: "2026-03-20", label: "Virement — Heeroo acompte", counterparty: "9522-6452 Québec Inc.", side: "credit", amount: 3000, currency: "CAD", source: "quickbooks", invoiceId: iid("HEE-0426-01") },
-    ...bills
-      .filter((b) => b.total > 0)
-      .map((b) => ({
-        legalEntityId: otp.id,
-        date: b.issueDate!,
-        label: b.label.toUpperCase(),
-        side: "debit" as const,
-        amount: b.total,
-        currency: "CAD",
-        source: "quickbooks" as const,
-        billId: b.id,
-      })),
-    { legalEntityId: otp.id, date: "2026-10-14", label: "CLOUDFLARE INC", counterparty: "Cloudflare", side: "debit", amount: 7.18, currency: "CAD", source: "quickbooks", note: "Aucune dépense liée — justificatif à retrouver." },
-    { legalEntityId: mgs.id, date: "2026-10-01", label: "QONTO — abonnement", counterparty: "Qonto", side: "debit", amount: 11, currency: "EUR", source: "qonto", note: "Aucune dépense liée — justificatif à retrouver." },
+    { kind: "movement", legalEntityId: otp.id, date: "2026-10-14", label: "CLOUDFLARE INC", counterparty: "Cloudflare", side: "debit", total: 7.18, subtotal: 7.18, currency: "CAD", source: "quickbooks", notes: "Aucune dépense liée — justificatif à retrouver." },
+    { kind: "movement", legalEntityId: mgs.id, date: "2026-10-01", label: "QONTO — abonnement", counterparty: "Qonto", side: "debit", total: 11, subtotal: 11, currency: "EUR", source: "qonto", notes: "Aucune dépense liée — justificatif à retrouver." },
   ]);
 
   /* ------------------------------------------------------------------ */
@@ -598,17 +586,11 @@ async function main() {
     { table: "task", name: "Urgences", type: "table", icon: "Flame", position: 3, config: { ...empty, filters: [{ id: "f1", field: "priority", op: "in", value: ["high", "urgent"] }, { id: "f2", field: "status", op: "not_in", value: ["done", "cancelled"] }], sorts: [{ field: "dueDate", dir: "asc" }] } },
     { table: "project", name: "Timeline", type: "gantt", icon: "ChartGantt", position: 1, config: { ...empty, dateField: "startDate", endDateField: "dueDate", filters: [{ id: "f1", field: "status", op: "not_in", value: ["cancelled", "idea"] }] } },
     { table: "project", name: "Par statut", type: "kanban", icon: "Columns3", position: 2, config: { ...empty, groupBy: "status" } },
-    { table: "invoice", name: "Impayées", type: "table", icon: "CircleAlert", position: 1, config: { ...empty, filters: [{ id: "f1", field: "status", op: "in", value: ["sent", "partial", "overdue"] }], sorts: [{ field: "dueDate", dir: "asc" }] } },
-    { table: "invoice", name: "Megascale (FR)", type: "table", icon: "Landmark", position: 2, config: { ...empty, filters: [{ id: "f1", field: "legalEntityId", op: "in", value: [mgs.id] }] } },
-    { table: "invoice", name: "Otopio Inc. (CA)", type: "table", icon: "Landmark", position: 3, config: { ...empty, filters: [{ id: "f1", field: "legalEntityId", op: "in", value: [otp.id] }] } },
-    { table: "bill", name: "Justificatif manquant", type: "table", icon: "FileWarning", position: 1, config: { ...empty, filters: [{ id: "f1", field: "fileUrl", op: "is_empty" }] } },
-    { table: "bill", name: "Abonnements", type: "table", icon: "Repeat", position: 2, config: { ...empty, filters: [{ id: "f1", field: "recurrence", op: "in", value: ["monthly", "quarterly", "yearly"] }] } },
     { table: "organization", name: "Clients actifs", type: "gallery", icon: "Star", position: 1, config: { ...empty, filters: [{ id: "f1", field: "type", op: "in", value: ["client"] }, { id: "f2", field: "status", op: "in", value: ["active"] }] } },
     { table: "organization", name: "Pipeline", type: "kanban", icon: "Columns3", position: 2, config: { ...empty, groupBy: "status", filters: [{ id: "f1", field: "type", op: "in", value: ["lead", "client"] }] } },
     { table: "ticket", name: "Support client", type: "kanban", icon: "Columns3", position: 1, config: { ...empty, groupBy: "status" } },
     { table: "post", name: "Calendrier éditorial", type: "calendar", icon: "CalendarDays", position: 1, config: { ...empty, dateField: "scheduledAt" } },
     { table: "article", name: "Pipeline SEO", type: "kanban", icon: "Columns3", position: 1, config: { ...empty, groupBy: "status" } },
-    { table: "transaction", name: "À rapprocher", type: "table", icon: "Link2Off", position: 1, config: { ...empty, filters: [{ id: "f1", field: "invoiceId", op: "is_empty" }, { id: "f2", field: "billId", op: "is_empty" }] } },
   ]);
 
   console.log(`[seed] done — ${orgs.length} organizations, ${people.length} people, ${projects.length} projects, ${invoices.length} invoices, ${bills.length} bills`);

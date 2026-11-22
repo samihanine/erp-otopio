@@ -17,11 +17,10 @@ const TABS = ["home", "clients", "db", "finance"];
 
 type Section = { key: string; to: string; icon: typeof Home; label: DictKey; match: (p: string) => boolean };
 const SECTIONS: Section[] = [
-  { key: "home", to: "/", icon: Home, label: "home", match: (p) => p === "/" },
+  { key: "home", to: "/", icon: Home, label: "home", match: (p) => p === "/" || p.startsWith("/calendar") },
   { key: "clients", to: "/clients", icon: Briefcase, label: "clients", match: (p) => p.startsWith("/clients") },
   { key: "db", to: "/db", icon: Database, label: "databaseShort", match: (p) => p.startsWith("/db") },
   { key: "docs", to: "/documents", icon: FileText, label: "documents", match: (p) => p.startsWith("/documents") },
-  { key: "calendar", to: "/calendar", icon: CalendarDays, label: "calendar", match: (p) => p.startsWith("/calendar") },
   { key: "finance", to: "/finance", icon: Wallet, label: "finance", match: (p) => p.startsWith("/finance") },
   { key: "website", to: "/website", icon: Globe, label: "website", match: (p) => p.startsWith("/website") },
 ];
@@ -109,7 +108,9 @@ function RailLink({ to, icon: I, label, active }: { to: string; icon: typeof Hom
  *  - `sidebar`: section navigation (e.g. the list of tables). Collapsible on desktop,
  *    and shown in the slide-over menu on mobile / tablet.
  */
-export function AppShell({ children, title, actions, parent, sidebar, header = true }: { children: ReactNode; title?: ReactNode; actions?: ReactNode; parent?: { label: string; to: string }; sidebar?: ReactNode; header?: boolean }) {
+export type ShellTab = { key: string; label: string; to?: string; onClick?: () => void; active: boolean };
+
+export function AppShell({ children, title, actions, parent, sidebar, header = true, tabs }: { children: ReactNode; title?: ReactNode; actions?: ReactNode; parent?: { label: string; to: string }; sidebar?: ReactNode; header?: boolean; tabs?: ShellTab[] }) {
   const { t, locale, setLocale, tr } = useI18n();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { data: session } = useSession();
@@ -284,8 +285,23 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
                 <span className="text-subtle max-sm:hidden">/</span>
               </>
             ) : null}
-            <span className="truncate font-medium">{title ?? (section ? t(section.key === "db" ? "database" : section.label) : "")}</span>
+            <span className={cn("truncate font-medium", tabs?.length && "max-sm:hidden")}>{title ?? (section ? t(section.key === "db" ? "database" : section.label) : "")}</span>
           </div>
+          {tabs?.length ? (
+            <nav className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-2">
+              {tabs.map((tb) =>
+                tb.to ? (
+                  <Link key={tb.key} to={tb.to} search={{}} className={cn("shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-[13px] font-medium text-muted transition hover:bg-hover hover:text-fg", tb.active && "bg-fg/[.07] text-fg dark:bg-white/10")}>
+                    {tb.label}
+                  </Link>
+                ) : (
+                  <button key={tb.key} type="button" onClick={tb.onClick} className={cn("shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-[13px] font-medium text-muted transition hover:bg-hover hover:text-fg", tb.active && "bg-fg/[.07] text-fg dark:bg-white/10")}>
+                    {tb.label}
+                  </button>
+                ),
+              )}
+            </nav>
+          ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {md ? actions : null}
             <button

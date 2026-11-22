@@ -46,7 +46,7 @@ export async function summarizeClients() {
     const [comms, projects, invoices, tickets] = await Promise.all([
       db.select().from(schema.communication).where(eq(schema.communication.organizationId, o.id)).orderBy(desc(schema.communication.occurredAt)).limit(15),
       db.select().from(schema.project).where(eq(schema.project.organizationId, o.id)),
-      db.select().from(schema.invoice).where(eq(schema.invoice.organizationId, o.id)),
+      db.select().from(schema.transaction).where(and(eq(schema.transaction.kind, "invoice"), eq(schema.transaction.organizationId, o.id))),
       db.select().from(schema.ticket).where(eq(schema.ticket.organizationId, o.id)),
     ]);
     const ctx = [
@@ -70,8 +70,8 @@ export async function dashboardDigest() {
   const [comms, tasks, invoices, bills, events] = await Promise.all([
     db.select().from(schema.communication).where(gte(schema.communication.occurredAt, since)).orderBy(desc(schema.communication.occurredAt)).limit(60),
     db.select().from(schema.task).where(sql`${schema.task.status} not in ('done','cancelled')`),
-    db.select().from(schema.invoice).where(sql`${schema.invoice.status} in ('sent','partial','overdue')`),
-    db.select().from(schema.bill).where(gte(schema.bill.createdAt, since)),
+    db.select().from(schema.transaction).where(sql`${schema.transaction.kind} = 'invoice' and ${schema.transaction.status} in ('sent','partial','overdue')`),
+    db.select().from(schema.transaction).where(and(eq(schema.transaction.kind, "expense"), gte(schema.transaction.createdAt, since))),
     db.select().from(schema.event).where(and(gte(schema.event.startAt, new Date()), lt(schema.event.startAt, new Date(Date.now() + 7 * 864e5)), eq(schema.event.isPrivate, false))),
   ]);
   const today = new Date().toISOString().slice(0, 10);

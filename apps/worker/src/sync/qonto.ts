@@ -80,9 +80,8 @@ export async function syncQonto() {
   const org = await q<{ organization: { bank_accounts: { id: string; status?: string; currency?: string; balance_cents?: number }[] } }>("/organization");
   const stats = { created: 0, bills: 0, invoicesPaid: 0, attachments: 0, skipped: 0 };
   const existing = await db.select().from(schema.transaction).where(eq(schema.transaction.legalEntityId, mgs.id));
-  const have = new Map(existing.map((t) => [t.externalRef, t]));
-  const openInvoices = await db.select().from(schema.invoice).where(eq(schema.invoice.legalEntityId, mgs.id));
-  const usedInvoice = new Set(existing.map((t) => t.invoiceId).filter(Boolean));
+  const have = new Map(existing.filter((t) => t.bankRef).map((t) => [t.bankRef!, t]));
+  const openInvoices = existing.filter((t) => t.kind === "invoice" && !t.bankRef);
   let balance = 0;
 
   for (const acc of org.organization.bank_accounts) {
@@ -100,77 +99,82 @@ export async function syncQonto() {
       const known = have.get(ref);
       const date = String(t.settled_at ?? t.emitted_at).slice(0, 10);
       if (known) {
-        // late-arriving justificatif on an already imported debit
-        if (known.billId && t.attachment_ids?.length) {
-          const [b] = await db.select().from(schema.bill).where(eq(schema.bill.id, known.billId));
-          if (b && !b.fileUrl) {
-            const url = await storeAttachment(t.attachment_ids[0]!, "bill", b.id).catch(() => null);
-            if (url) {
-              await db.update(schema.bill).set({ fileUrl: url }).where(eq(schema.bill.id, b.id));
-              stats.attachments++;
-              await log("qonto-receipt", "bill", b.id, `Justificatif Qonto rattaché à « ${b.label} »`);
-            }
+        // late-arriving justificatif on an already imported expense
+        if (known.kind === "expense" && !known.fileUrl && t.attachment_ids?.length) {
+          const url = await storeAttachment(t.attachment_ids[0]!, "transaction", known.id).catch(() => null);
+          if (url) {
+            await db.update(schema.transaction).set({ fileUrl: url }).where(eq(schema.transaction.id, known.id));
+            known.fileUrl = url;
+            stats.attachments++;
+            await log("qonto-receipt", "transaction", known.id, `Justificatif Qonto rattaché à « ${known.label} »`);
           }
         }
         stats.skipped++;
         continue;
       }
-      // fallback anti-doublon: same date + amount + side already present (e.g. imported by hand)
-      const twin = existing.find((x) => x.date === date && x.side === t.side && Math.abs(Number(x.amount) - t.amount) < 0.005 && !String(x.externalRef ?? "").startsWith("qonto:"));
+      // anti-doublon: same date + amount + direction already recorded without a bank id (e.g. entered by hand)
+      const twin = existing.find((x) => !x.bankRef && x.kind !== "invoice" && x.date === date && x.side === t.side && Math.abs(Number(x.total) - t.amount) < 0.005);
       if (twin) {
-        await db.update(schema.transaction).set({ externalRef: ref, source: "qonto" }).where(eq(schema.transaction.id, twin.id));
+        await db.update(schema.transaction).set({ bankRef: ref, source: "qonto", counterparty: t.label, paidAt: twin.paidAt ?? date }).where(eq(schema.transaction.id, twin.id));
+        twin.bankRef = ref;
+        have.set(ref, twin);
         continue;
       }
       const debit = t.side === "debit";
-      let billId: string | null = null;
-      let invoiceId: string | null = null;
       if (debit) {
         const vat = t.vat_amount ? Number(t.vat_amount) : 0;
-        const [b] = await db
-          .insert(schema.bill)
+        const [row] = await db
+          .insert(schema.transaction)
           .values({
+            kind: "expense",
+            side: "debit",
             label: `${t.label}${t.reference ? ` — ${t.reference}` : ""}`.slice(0, 200),
+            counterparty: t.label,
             legalEntityId: mgs.id,
             category: categorize(`${t.label} ${t.reference ?? ""}`) as never,
             status: "paid",
-            issueDate: date,
+            date,
             paidAt: date,
             currency: t.currency,
             total: t.amount,
+            amountPaid: t.amount,
             subtotal: Math.round((t.amount - vat) * 100) / 100,
             taxTotal: vat,
             paidBy: "entity",
             paymentMethod: t.operation_type === "card" ? "Carte Qonto Megascale" : t.operation_type === "direct_debit" ? "Prélèvement Qonto" : "Virement Qonto",
-            externalRef: ref,
-            notes: "Importé automatiquement depuis Qonto.",
+            source: "qonto",
+            bankRef: ref,
+            notes: t.note ?? "Importé automatiquement depuis Qonto.",
           })
-          .returning({ id: schema.bill.id });
-        billId = b!.id;
+          .returning();
+        have.set(ref, row!);
         stats.bills++;
         if (t.attachment_ids?.length) {
-          const url = await storeAttachment(t.attachment_ids[0]!, "bill", billId).catch(() => null);
+          const url = await storeAttachment(t.attachment_ids[0]!, "transaction", row!.id).catch(() => null);
           if (url) {
-            await db.update(schema.bill).set({ fileUrl: url }).where(eq(schema.bill.id, billId));
+            await db.update(schema.transaction).set({ fileUrl: url }).where(eq(schema.transaction.id, row!.id));
             stats.attachments++;
           }
         }
+        await log("qonto-tx", "transaction", row!.id, `Dépense Qonto ${t.amount} ${t.currency} — ${t.label}${!t.attachment_ids?.length ? " (justificatif manquant)" : ""}`);
       } else {
-        const inv = openInvoices.find((i) => !usedInvoice.has(i.id) && i.status !== "paid" && i.status !== "lost" && i.status !== "cancelled" && i.currency === t.currency && Math.abs(Number(i.total) - t.amount) < 0.01);
+        const inv = openInvoices.find((i) => !["paid", "lost", "cancelled", "draft"].includes(i.status) && i.currency === t.currency && Math.abs(Number(i.total) - Number(i.amountPaid) - t.amount) < 0.01);
         if (inv) {
-          invoiceId = inv.id;
-          usedInvoice.add(inv.id);
-          await db.update(schema.invoice).set({ status: "paid" }).where(eq(schema.invoice.id, inv.id));
+          openInvoices.splice(openInvoices.indexOf(inv), 1);
+          await db.update(schema.transaction).set({ status: "paid", paidAt: date, amountPaid: inv.total, bankRef: ref, source: "qonto", counterparty: t.label }).where(eq(schema.transaction.id, inv.id));
+          have.set(ref, { ...inv, bankRef: ref });
           stats.invoicesPaid++;
-          await log("qonto-invoice-paid", "invoice", inv.id, `Facture ${inv.number} marquée payée (virement Qonto ${t.amount} ${t.currency})`);
+          await log("qonto-invoice-paid", "transaction", inv.id, `Facture ${inv.number} marquée payée (virement Qonto ${t.amount} ${t.currency})`);
+        } else {
+          const [row] = await db
+            .insert(schema.transaction)
+            .values({ kind: "movement", side: "credit", legalEntityId: mgs.id, date, paidAt: date, label: t.label, counterparty: t.label, total: t.amount, subtotal: t.amount, amountPaid: t.amount, currency: t.currency, source: "qonto", bankRef: ref, nature: "operating", status: "paid", notes: t.note ?? null })
+            .returning();
+          have.set(ref, row!);
+          await log("qonto-tx", "transaction", row!.id, `Encaissement Qonto ${t.amount} ${t.currency} — ${t.label} (aucune facture associée)`);
         }
       }
-      const [row] = await db
-        .insert(schema.transaction)
-        .values({ legalEntityId: mgs.id, date, label: t.label, counterparty: t.label, side: t.side, amount: t.amount, currency: t.currency, source: "qonto", externalRef: ref, nature: "operating", invoiceId, billId, note: t.note ?? null })
-        .returning({ id: schema.transaction.id });
-      have.set(ref, { id: row!.id, billId, invoiceId } as never);
       stats.created++;
-      await log("qonto-tx", "transaction", row!.id, `${debit ? "Dépense" : "Encaissement"} Qonto ${t.amount} ${t.currency} — ${t.label}${debit && !t.attachment_ids?.length ? " (justificatif manquant)" : ""}${!debit && !invoiceId ? " (aucune facture associée)" : ""}`);
     }
   }
   await setState("qonto:lastSync", JSON.stringify({ at: new Date().toISOString(), balance, ...stats }));

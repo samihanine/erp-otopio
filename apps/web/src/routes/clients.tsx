@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, ExternalLink, FolderOpen, Mail, Plus, RefreshCw, Search, Sparkles, Video } from "lucide-react";
 import { formatMoney, TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
+import { Explorer } from "./files";
 import { api, type Row } from "@/lib/api";
 import { fmtDate, fmtRelative, useI18n } from "@/lib/i18n";
 import { useCreateRecord } from "@/lib/data";
@@ -125,7 +126,7 @@ export function ClientPage() {
     );
   const { org, kpis } = data;
   const projStatus = TABLES.project.fields.find((f) => f.key === "status")!.options!;
-  const invStatus = TABLES.invoice.fields.find((f) => f.key === "status")!.options!;
+  const invStatus = TABLES.transaction.fields.find((f) => f.key === "status")!.options!;
   const quoteStatus = TABLES.quote.fields.find((f) => f.key === "status")!.options!;
   const commType = TABLES.communication.fields.find((f) => f.key === "type")!.options!;
 
@@ -339,17 +340,13 @@ export function ClientPage() {
             )}
 
             {tab === "files" && (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-x-6 gap-y-0.5">
-                {data.documents.map((d) => (
-                  <button key={d.id} type="button" onClick={() => setPreview(d)} className="-mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-hover" title={String(d.title)}>
-                    <span className="grid size-5 shrink-0 place-items-center">
-                      <FileIcon mime={String(d.mimeType ?? "")} />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{String(d.title)}</span>
-                  </button>
-                ))}
-                {!data.documents.length && <Empty>{tr({ fr: "Aucun fichier synchronisé.", en: "No synced files." })}</Empty>}
-              </div>
+              data.org.driveFolderId ? (
+                <div className="-mx-4 flex h-[70vh] min-h-[420px] flex-col overflow-hidden rounded-xl border border-border md:mx-0">
+                  <Explorer root={{ id: String(data.org.driveFolderId), name: String(data.org.name), path: String(data.org.name) }} />
+                </div>
+              ) : (
+                <Empty>{tr({ fr: "Aucun dossier Drive lié à ce client.", en: "No Drive folder linked to this client." })}</Empty>
+              )
             )}
           </div>
         </div>

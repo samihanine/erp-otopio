@@ -28,12 +28,13 @@ export function DocumentsPage() {
   const { data: templates } = useDocs("template");
   const { data: free } = useDocs("document");
   const { data: quotes } = useList("quote", { sorts: [{ field: "issueDate", dir: "desc" }], limit: 8 });
-  const { data: invoices } = useList("invoice", { sorts: [{ field: "issueDate", dir: "desc" }], limit: 8 });
+  const { data: invoices } = useList("transaction", { filters: [{ field: "kind", op: "in", value: ["invoice"] }], sorts: [{ field: "date", dir: "desc" }], limit: 8 });
   const createQuote = useCreateRecord("quote");
-  const createInvoice = useCreateRecord("invoice");
+  const createInvoice = useCreateRecord("transaction");
 
   const newDoc = async (kind: "quote" | "invoice") => {
-    const res = await (kind === "quote" ? createQuote : createInvoice).mutateAsync({ status: "draft", issueDate: new Date().toISOString().slice(0, 10) });
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await (kind === "quote" ? createQuote.mutateAsync({ status: "draft", issueDate: today }) : createInvoice.mutateAsync({ kind: "invoice", status: "draft", date: today, lines: [] }));
     navigate({ to: "/documents/$kind/$id", params: { kind, id: res.row.id } });
   };
 
@@ -109,7 +110,7 @@ export function DocumentsPage() {
 
           <div className="mt-10 grid gap-6 lg:grid-cols-2">
             <DocList title={tr(TABLES.quote.label)} kind="quote" rows={quotes?.rows ?? []} refs={quotes?.refs ?? {}} />
-            <DocList title={tr(TABLES.invoice.label)} kind="invoice" rows={invoices?.rows ?? []} refs={invoices?.refs ?? {}} />
+            <DocList title={tr({ fr: "Factures", en: "Invoices" })} kind="invoice" rows={invoices?.rows ?? []} refs={invoices?.refs ?? {}} />
           </div>
 
           <h2 className="mb-3 mt-10 text-lg font-semibold">{tr({ fr: "Documents libres", en: "Free documents" })}</h2>
@@ -140,12 +141,12 @@ function useDocs(kind: "template" | "document") {
 
 function DocList({ title, kind, rows, refs }: { title: string; kind: "quote" | "invoice"; rows: Row[]; refs: Record<string, Record<string, { label: string }>> }) {
   const { locale, tr } = useI18n();
-  const status = TABLES[kind].fields.find((f) => f.key === "status")!;
+  const status = TABLES[kind === "quote" ? "quote" : "transaction"].fields.find((f) => f.key === "status")!;
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">{title}</h2>
-        <Link to="/db/$table" params={{ table: kind }} className="text-[13px] text-muted hover:text-fg">
+        <Link to="/db/$table" params={{ table: kind === "quote" ? "quote" : "transaction" }} className="text-[13px] text-muted hover:text-fg">
           {tr({ fr: "Tout voir", en: "View all" })} →
         </Link>
       </div>
@@ -157,11 +158,11 @@ function DocList({ title, kind, rows, refs }: { title: string; kind: "quote" | "
                 <span className="font-mono text-xs text-muted">{String(r.number)}</span>
                 <span className="truncate text-[13px] font-medium">{refs.organization?.[String(r.organizationId)]?.label ?? "—"}</span>
               </span>
-              <span className="block truncate text-xs text-subtle">{String(r.title ?? "")}</span>
+              <span className="block truncate text-xs text-subtle">{String(r.title ?? r.label ?? "")}</span>
             </span>
             <span className="text-right">
               <span className="block text-[13px] font-medium tabular-nums">{formatMoney(Number(r.total), String(r.currency), locale)}</span>
-              <span className="block text-[11px] text-subtle">{fmtDate(r.issueDate, locale)}</span>
+              <span className="block text-[11px] text-subtle">{fmtDate((r.issueDate ?? r.date) as string, locale)}</span>
             </span>
             <OptionBadge option={status.options!.find((o) => o.value === r.status)} />
           </Link>
@@ -178,10 +179,14 @@ function DocList({ title, kind, rows, refs }: { title: string; kind: "quote" | "
 export function DocumentEditorPage() {
   const { kind, id } = useParams({ from: "/app/documents/$kind/$id" });
   const k = (kind === "quote" ? "quote" : "invoice") as "quote" | "invoice";
+  /** invoices live in the unified ledger table */
+  const tk = k === "quote" ? "quote" : "transaction";
+  const titleKey = k === "quote" ? "title" : "label";
+  const dateKey = k === "quote" ? "issueDate" : "date";
   const { tr, t, locale } = useI18n();
   const navigate = useNavigate();
-  const { data, isLoading } = useRecord(k, id);
-  const update = useUpdateRecord(k);
+  const { data, isLoading } = useRecord(tk, id);
+  const update = useUpdateRecord(tk);
   const row = data?.row;
   const { data: entityData } = useRecord("legal_entity", row?.legalEntityId as string | undefined);
   const { data: clientData } = useRecord("organization", row?.organizationId as string | undefined);
@@ -224,8 +229,8 @@ export function DocumentEditorPage() {
       kind: k,
       locale: previewLocale,
       number: String(row.number),
-      title: row.title as string,
-      issueDate: row.issueDate as string,
+      title: row[titleKey] as string,
+      issueDate: row[dateKey] as string,
       dueDate: (k === "quote" ? row.validUntil : row.dueDate) as string,
       currency: String(row.currency),
       lines,
@@ -249,7 +254,7 @@ export function DocumentEditorPage() {
       </AppShell>
     );
 
-  const def = TABLES[k];
+  const def = TABLES[tk];
   const f = (key: string) => def.fields.find((x) => x.key === key)!;
   const save = (key: string, v: unknown) => update.mutate({ id, patch: { [key]: v } });
   const money = (n: number) => formatMoney(n, String(row.currency), locale);
@@ -290,7 +295,7 @@ export function DocumentEditorPage() {
   const Prop = ({ k: key }: { k: string }) => (
     <div className="grid grid-cols-[130px_minmax(0,1fr)] items-center gap-2">
       <span className="truncate text-[13px] text-muted">{label(key)}</span>
-      <PropertyValue field={f(key)} row={row} refs={data.refs} table={k} onSave={(v) => save(key, v)} />
+      <PropertyValue field={f(key)} row={row} refs={data.refs} table={tk} onSave={(v) => save(key, v)} />
     </div>
   );
 
@@ -325,9 +330,9 @@ export function DocumentEditorPage() {
               <OptionBadge option={f("status").options!.find((o) => o.value === row.status)} />
             </div>
             <input
-              key={String(row.title)}
-              defaultValue={String(row.title ?? "")}
-              onBlur={(e) => e.target.value !== row.title && save("title", e.target.value)}
+              key={String(row[titleKey])}
+              defaultValue={String(row[titleKey] ?? "")}
+              onBlur={(e) => e.target.value !== row[titleKey] && save(titleKey, e.target.value)}
               placeholder={tr({ fr: "Objet du document", en: "Document subject" })}
               className="mt-1 w-full bg-transparent text-[22px] font-semibold tracking-tight outline-none placeholder:text-subtle"
             />
@@ -340,7 +345,7 @@ export function DocumentEditorPage() {
               <Prop k="projectId" />
               <Prop k="number" />
               <Prop k="currency" />
-              <Prop k="issueDate" />
+              <Prop k={dateKey} />
               <Prop k={k === "quote" ? "validUntil" : "dueDate"} />
               {k === "invoice" && <Prop k="amountPaid" />}
             </div>
@@ -478,7 +483,7 @@ function SendDialog({ open, onOpenChange, kind, row, clientEmail, total }: { ope
   const { tr } = useI18n();
   const [to, setTo] = useState(clientEmail ?? "");
   useEffect(() => setTo(clientEmail ?? ""), [clientEmail]);
-  const subject = kind === "quote" ? `Devis ${row.number} — ${row.title ?? ""}` : `Facture ${row.number} — ${row.title ?? ""}`;
+  const subject = kind === "quote" ? `Devis ${row.number} — ${row.title ?? ""}` : `Facture ${row.number} — ${row.label ?? ""}`;
   const body = `Bonjour,\n\nVous trouverez ci-joint ${kind === "quote" ? "le devis" : "la facture"} ${row.number} d'un montant de ${total}.\n\nNous restons à votre entière disposition.\n\nCordialement,\nL'équipe Otopio`;
   const [text, setText] = useState(body);
   useEffect(() => setText(body), [body]);

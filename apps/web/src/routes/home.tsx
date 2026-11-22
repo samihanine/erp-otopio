@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { OptionBadge, Segmented, Skeleton } from "@/components/ui/misc";
 import { RelationChip } from "@/components/database/fields";
 import type { FinanceSummary } from "./finance";
-import { AlertsCard, DigestCard } from "./automation";
+import { DigestCard } from "./automation";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -23,6 +23,14 @@ function Stat({ label, value, to, sub }: { label: string; value: string | number
       {sub ? <div className="mt-0.5 text-xs text-subtle">{sub}</div> : null}
     </Link>
   );
+}
+
+/** Accueil sub-tabs: general dashboard + team calendar */
+export function homeTabs(tr: (x: { fr: string; en: string }) => string, active: "general" | "calendar") {
+  return [
+    { key: "general", label: tr({ fr: "Général", en: "Overview" }), to: "/", active: active === "general" },
+    { key: "calendar", label: tr({ fr: "Calendrier", en: "Calendar" }), to: "/calendar", active: active === "calendar" },
+  ];
 }
 
 export function HomePage() {
@@ -51,7 +59,7 @@ export function HomePage() {
   const hour = new Date().getHours();
 
   return (
-    <AppShell title={t("home")}>
+    <AppShell title={t("home")} tabs={homeTabs(tr, "general")}>
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 pb-20 pt-6 md:px-8 md:pt-10">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -72,15 +80,14 @@ export function HomePage() {
             />
           </div>
 
-          <AlertsCard />
-          <DigestCard />
-
-          <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label={tr({ fr: "Tâches ouvertes", en: "Open tasks" })} value={isLoading ? "…" : open.length} sub={late ? `${late} ${tr({ fr: "en retard", en: "late" })}` : undefined} to="/db/task" />
             <Stat label={tr({ fr: "Projets actifs", en: "Active projects" })} value={projects?.total ?? "…"} to="/db/project" />
             <Stat label={tr({ fr: "Tickets ouverts", en: "Open tickets" })} value={tickets?.total ?? "…"} to="/db/ticket" />
             <Stat label={t("outstanding")} value={fin ? formatMoney(fin.kpis.outstanding, "CAD", locale) : "…"} sub={t("consolidated")} to="/finance" />
           </div>
+
+          <DigestCard />
 
           <div className="mt-12 grid gap-10 lg:grid-cols-2 [&>*]:min-w-0">
             <section>

@@ -14,6 +14,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Segmented, Skeleton } from "@/components/ui/misc";
 import { usePrefValue } from "@/lib/use-media";
 import { TaxesView } from "./taxes";
+import { AlertsCard } from "./automation";
 
 export type FinanceSummary = {
   year: number | "all";
@@ -42,7 +43,7 @@ export type FinanceSummary = {
   ledger?: LedgerRow[];
   receivables?: { id: string; number: string; client: string | null; issueDate: string | null; dueDate: string | null; balance: number; original: number; currency: string; overdue: boolean }[];
 };
-type LedgerRow = { id: string; table: "bill" | "invoice"; date: string | null; label: string; party: string | null; category: string | null; entity: string; side: "expense" | "income"; amount: number; original: number; currency: string; hasFile: boolean; status: string; reimburse: boolean };
+type LedgerRow = { id: string; table: "transaction"; date: string | null; label: string; party: string | null; category: string | null; entity: string; side: "expense" | "income"; amount: number; original: number; currency: string; hasFile: boolean; status: string; reimburse: boolean };
 
 export function FinancePage() {
   const { tr, t, locale } = useI18n();
@@ -75,7 +76,7 @@ export function FinancePage() {
   const periodLabel = `${year === "all" ? tr({ fr: "Toutes les années", en: "All years" }) : year}${months.length ? ` · ${months.map((m) => MONTHS[m - 1]).join(", ")}` : ""}`;
   const cur = data?.currency ?? "CAD";
   const money = (n: number) => formatMoney(n, cur, locale);
-  const catField = TABLES.bill.fields.find((f) => f.key === "category")!;
+  const catField = TABLES.transaction.fields.find((f) => f.key === "category")!;
   const monthLabel = (m: string) => (m.length === 4 ? m : fmtDate(`${m}-01`, locale, { month: "short" }).replace(".", ""));
 
   const kpis = data?.kpis;
@@ -85,7 +86,12 @@ export function FinancePage() {
   return (
     <AppShell
       title={t("finance")}
+      tabs={[
+        { key: "dashboard", label: tr({ fr: "Finance", en: "Finance" }), onClick: () => setView("dashboard"), active: view === "dashboard" },
+        { key: "taxes", label: tr({ fr: "Fiscal", en: "Tax" }), onClick: () => setView("taxes"), active: view === "taxes" },
+      ]}
       actions={
+        view === "taxes" ? null : (
         <div className="flex items-center gap-2">
           <Combobox
             size="md"
@@ -106,6 +112,7 @@ export function FinancePage() {
           <Segmented value={currency} onChange={pickCurrency} options={["CAD", "EUR", "USD"].map((c) => ({ value: c, label: c }))} />
           <Combobox size="md" className="w-60" value={entity} onChange={(v) => setEntity(v ?? "all")} options={[{ value: "all", label: t("allEntities") }, ...(data?.byEntity ?? []).map((e) => ({ value: e.id, label: `${e.name} (${e.country})` }))]} />
         </div>
+        )
       }
     >
       <div className="h-full overflow-y-auto">
@@ -113,31 +120,16 @@ export function FinancePage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-[24px] font-semibold tracking-tight md:text-[28px]">
-                {t("finance")} <span className="font-serif text-[26px] font-normal italic text-muted">{periodLabel}</span>
+                {view === "taxes" ? tr({ fr: "Fiscal", en: "Tax" }) : tr({ fr: "Finance", en: "Finance" })} {view === "taxes" ? null : <span className="font-serif text-[26px] font-normal italic text-muted">{periodLabel}</span>}
               </h1>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => navigate({ to: "/db/$table", params: { table: "invoice" } })}>
-                <Receipt /> {tr(TABLES.invoice.label)}
-              </Button>
-              <Button size="sm" onClick={() => navigate({ to: "/db/$table", params: { table: "bill" } })}>
-                <Wallet /> {tr(TABLES.bill.label)}
-              </Button>
               <Button size="sm" onClick={() => navigate({ to: "/db/$table", params: { table: "transaction" } })}>
                 <Banknote /> {tr(TABLES.transaction.label)}
               </Button>
             </div>
           </div>
 
-          <Segmented
-            className="mt-5"
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "dashboard", label: tr({ fr: "Tableau de bord", en: "Dashboard" }) },
-              { value: "taxes", label: tr({ fr: "Impôts & échéances", en: "Taxes & deadlines" }) },
-            ]}
-          />
           {view === "taxes" ? (
             <TaxesView />
           ) : (
@@ -179,7 +171,6 @@ export function FinancePage() {
           </div>
 
           {/* Ledger */}
-          <Ledger rows={data?.ledger ?? []} money={money} cur={cur} />
 
           {/* Chart */}
           <div className="mt-6 rounded-2xl border border-border p-5">
@@ -266,7 +257,7 @@ export function FinancePage() {
               </div>
               <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto">
                 {(data?.subscriptions ?? []).map((s) => (
-                  <button key={s.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "bill", id: s.id } })} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
+                  <button key={s.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "transaction", id: s.id } })} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
                     <span className={cn("size-1.5 shrink-0 rounded-full", s.scope === "perso" ? "bg-pink-500" : "bg-blue-500")} />
                     <span className="min-w-0 flex-1 truncate">{s.label}</span>
                     {s.card && <span className="hidden shrink-0 text-xs text-subtle sm:inline">{s.card}</span>}
@@ -311,7 +302,7 @@ export function FinancePage() {
               </div>
               <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto">
                 {(data?.receivables ?? []).map((r) => (
-                  <button key={r.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "invoice", id: r.id } })} className="flex w-full items-center gap-3 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
+                  <button key={r.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "transaction", id: r.id } })} className="flex w-full items-center gap-3 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
                     <span className={cn("size-1.5 shrink-0 rounded-full", r.overdue ? "bg-rose-500" : "bg-amber-500")} />
                     <span className="w-28 shrink-0 font-medium">{r.number}</span>
                     <span className="min-w-0 flex-1 truncate text-muted">{r.client ?? "—"}</span>
@@ -325,6 +316,10 @@ export function FinancePage() {
               </div>
             </div>
           </div>
+
+          {/* Needs attention + full ledger */}
+          <AlertsCard />
+          <Ledger rows={data?.ledger ?? []} money={money} cur={cur} />
             </>
           )}
         </div>
@@ -340,7 +335,7 @@ function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) =>
   const [sort, setSort] = useState<string>("date");
   const [month, setMonth] = useState<string>("all");
   const [limit, setLimit] = useState(25);
-  const catField = TABLES.bill.fields.find((f) => f.key === "category")!;
+  const catField = TABLES.transaction.fields.find((f) => f.key === "category")!;
   const monthsAvail = [...new Set(rows.map((r) => r.date?.slice(0, 7)).filter(Boolean) as string[])].sort().reverse();
   const missingCount = rows.filter((r) => !r.hasFile).length;
   let list = rows.filter((r) => (kind === "all" ? true : kind === "missing" ? !r.hasFile : r.side === kind) && (month === "all" || r.date?.startsWith(month)));

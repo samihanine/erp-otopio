@@ -74,7 +74,6 @@ export function DatabaseSidebar({ current, viewId }: { current?: TableKey; viewI
               {!closed &&
                 tables.map((d) => {
                   const active = current === d.key;
-                  const tv = active ? views.filter((v) => v.table === d.key) : [];
                   return (
                     <div key={d.key}>
                       <Link
@@ -83,26 +82,13 @@ export function DatabaseSidebar({ current, viewId }: { current?: TableKey; viewI
                         search={{}}
                         className={cn(
                           "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] text-muted transition hover:bg-hover hover:text-fg",
-                          active && !viewId && "bg-hover font-medium text-fg",
-                          active && viewId && "text-fg",
+                          active && "bg-hover font-medium text-fg",
                         )}
                       >
                         <TableTile icon={d.icon} color={d.color} size="sm" />
                         <span className="flex-1 truncate">{tr(d.label)}</span>
                         <span className="text-[11px] tabular-nums text-subtle">{counts?.[d.key] ?? ""}</span>
                       </Link>
-                      {tv.map((v) => (
-                        <Link
-                          key={v.id}
-                          to="/db/$table"
-                          params={{ table: d.key }}
-                          search={{ view: v.id }}
-                          className={cn("ml-4 flex h-7 items-center gap-2 rounded-md border-l border-border px-2 text-[12.5px] text-muted hover:bg-hover hover:text-fg", viewId === v.id && "bg-hover font-medium text-fg")}
-                        >
-                          <Icon name={v.icon ?? VIEW_ICONS[v.type]} className="size-3.5 shrink-0" />
-                          <span className="truncate">{v.name}</span>
-                        </Link>
-                      ))}
                     </div>
                   );
                 })}

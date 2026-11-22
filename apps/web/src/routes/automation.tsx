@@ -53,33 +53,52 @@ export function DigestCard() {
       sections.at(-1)!.items.push(l.replace(/^[-*•]\s+/, ""));
     }
   }
-  const max = open ? 99 : 2;
+  const max = open ? 99 : 3;
   const hidden = sections.reduce((a, s) => a + Math.max(0, s.items.length - max), 0);
+  const TONES = [
+    { dot: "bg-sky-500", ring: "border-sky-500/20", bg: "bg-sky-500/[.04]" },
+    { dot: "bg-amber-500", ring: "border-amber-500/25", bg: "bg-amber-500/[.05]" },
+    { dot: "bg-violet-500", ring: "border-violet-500/20", bg: "bg-violet-500/[.04]" },
+  ];
   return (
-    <section className="mt-6 rounded-xl bg-surface-2/50 px-4 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <Sparkles className="size-3.5 text-violet-500" />
-        <h2 className="text-[12px] font-medium uppercase tracking-wider text-muted">{tr({ fr: "Point de la semaine", en: "Weekly brief" })}</h2>
-        <span className="text-[11px] text-subtle">· {fmtRelative(data.at, locale)}</span>
+    <section className="mt-6">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="grid size-6 place-items-center rounded-md bg-violet-500/10">
+          <Sparkles className="size-3.5 text-violet-500" />
+        </span>
+        <h2 className="text-[15px] font-semibold">{tr({ fr: "Point de la semaine", en: "Weekly brief" })}</h2>
+        <span className="text-[12px] text-subtle">{fmtRelative(data.at, locale)}</span>
         {(hidden > 0 || open) && (
-          <button type="button" onClick={() => setOpen(!open)} className="ml-auto text-[11.5px] text-muted hover:text-fg">
+          <button type="button" onClick={() => setOpen(!open)} className="ml-auto rounded-md px-2 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg">
             {open ? tr({ fr: "Réduire", en: "Collapse" }) : `${tr({ fr: "Voir tout", en: "Show all" })} (+${hidden})`}
           </button>
         )}
       </div>
-      <div className="grid gap-x-6 gap-y-2 md:grid-cols-3">
-        {sections.map((s, i) => (
-          <div key={i} className="min-w-0">
-            {s.title && <div className="mb-0.5 text-[12px] font-semibold">{s.title}</div>}
-            <ul className="space-y-0.5 text-[12.5px] leading-snug text-muted">
-              {s.items.slice(0, max).map((it, j) => (
-                <li key={j} className={cn(!open && "line-clamp-1")}>
-                  <Md text={it} inline />
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+      <div className="grid gap-3 md:grid-cols-3 [&>*]:min-w-0">
+        {sections.map((s, i) => {
+          const tone = TONES[i % TONES.length]!;
+          return (
+            <div key={i} className={cn("rounded-xl border px-4 py-3", tone.ring, tone.bg)}>
+              {s.title && (
+                <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                  <span className={cn("size-1.5 rounded-full", tone.dot)} />
+                  {s.title}
+                </div>
+              )}
+              <ul className="space-y-1.5 text-[13px] leading-snug text-fg/85">
+                {s.items.slice(0, max).map((it, j) => (
+                  <li key={j} className={cn("flex gap-2", !open && "[&>span]:line-clamp-2")}>
+                    <span className="mt-[7px] size-1 shrink-0 rounded-full bg-subtle" />
+                    <span>
+                      <Md text={it} inline />
+                    </span>
+                  </li>
+                ))}
+                {!s.items.length && <li className="text-subtle">—</li>}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -236,11 +255,11 @@ export function AlertsCard() {
   const { data } = useQuery({ queryKey: ["ws", "alerts"], queryFn: () => api<{ total: number; billsWithoutReceipt: AlertGroup; billsUncategorised: AlertGroup; invoicesWithoutFile: AlertGroup; bankUnmatched: AlertGroup; toReimburse: AlertGroup }>("/ws/alerts"), staleTime: 60_000 });
   if (!data || !(data.total + data.toReimburse.count)) return null;
   const groups: { title: string; g: AlertGroup; table: string }[] = [
-    { title: tr({ fr: "Dépenses sans justificatif", en: "Expenses without receipt" }), g: data.billsWithoutReceipt, table: "bill" },
-    { title: tr({ fr: "Dépenses non catégorisées", en: "Uncategorised expenses" }), g: data.billsUncategorised, table: "bill" },
-    { title: tr({ fr: "Factures sans fichier", en: "Invoices without file" }), g: data.invoicesWithoutFile, table: "invoice" },
+    { title: tr({ fr: "Dépenses sans justificatif", en: "Expenses without receipt" }), g: data.billsWithoutReceipt, table: "transaction" },
+    { title: tr({ fr: "Dépenses non catégorisées", en: "Uncategorised expenses" }), g: data.billsUncategorised, table: "transaction" },
+    { title: tr({ fr: "Factures sans fichier", en: "Invoices without file" }), g: data.invoicesWithoutFile, table: "transaction" },
     { title: tr({ fr: "Lignes bancaires non rapprochées", en: "Unmatched bank lines" }), g: data.bankUnmatched, table: "transaction" },
-    { title: tr({ fr: "Dépenses pro payées perso — à rembourser", en: "Pro expenses paid personally — to reimburse" }), g: data.toReimburse, table: "bill" },
+    { title: tr({ fr: "Dépenses pro payées perso — à rembourser", en: "Pro expenses paid personally — to reimburse" }), g: data.toReimburse, table: "transaction" },
   ].filter((x) => x.g.count > 0);
   return (
     <section className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">

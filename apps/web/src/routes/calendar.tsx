@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Lock, Plus, RefreshCw, Repeat, Video } from 
 import { TABLES } from "@erp/shared";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
+import { homeTabs } from "./home";
 import { api, type Row } from "@/lib/api";
 import { fmtDate, useI18n } from "@/lib/i18n";
 import { useCreateRecord, useList, useOptions } from "@/lib/data";
@@ -85,7 +86,8 @@ export function CalendarPage() {
 
   return (
     <AppShell
-      title={tr({ fr: "Calendrier", en: "Calendar" })}
+      title={tr({ fr: "Accueil", en: "Home" })}
+      tabs={homeTabs(tr, "calendar")}
       actions={
         <div className="flex items-center gap-2">
           <Button size="md" variant="ghost" onClick={() => api("/ws/sync/calendar-sync", { method: "POST" }).then(() => toast.success(tr({ fr: "Synchronisation lancée", en: "Sync started" })))}>

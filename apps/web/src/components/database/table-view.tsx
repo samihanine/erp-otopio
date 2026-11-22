@@ -27,22 +27,22 @@ type Props = {
 };
 
 const DEFAULT_WIDTH: Partial<Record<FieldDef["type"], number>> = {
-  text: 180,
-  longtext: 240,
-  number: 110,
-  currency: 130,
-  percent: 140,
-  date: 130,
-  datetime: 170,
-  select: 150,
-  tags: 180,
-  relation: 180,
-  checkbox: 90,
-  url: 180,
-  email: 210,
-  phone: 150,
-  repo: 200,
-  lines: 100,
+  text: 155,
+  longtext: 205,
+  number: 95,
+  currency: 110,
+  percent: 120,
+  date: 110,
+  datetime: 145,
+  select: 130,
+  tags: 155,
+  relation: 155,
+  checkbox: 75,
+  url: 155,
+  email: 180,
+  phone: 130,
+  repo: 170,
+  lines: 85,
 };
 
 type Cell = { row: number; col: number };
@@ -65,7 +65,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
   const [editing, setEditing] = useState<Cell | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const width = useCallback((f: FieldDef) => config.columnWidths?.[f.key] ?? f.width ?? DEFAULT_WIDTH[f.type] ?? 160, [config.columnWidths]);
+  const width = useCallback((f: FieldDef) => config.columnWidths?.[f.key] ?? (f.width ? Math.round(f.width * 0.88) : undefined) ?? DEFAULT_WIDTH[f.type] ?? 140, [config.columnWidths]);
   const template = `44px ${fields.map((f) => `${width(f)}px`).join(" ")} minmax(60px,1fr)`;
 
   // Column resize
@@ -138,18 +138,18 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
 
   return (
     <div ref={gridRef} className="relative h-full overflow-auto" tabIndex={-1}>
-      <div className="min-w-max text-[13px]">
+      <div className="min-w-max text-[12.5px] leading-tight">
         {/* Header */}
         <div className="sticky top-0 z-10 grid border-b border-border bg-surface/95 backdrop-blur" style={{ gridTemplateColumns: template }}>
-          <div className="sticky left-0 z-20 flex h-10 items-center justify-center border-r border-border bg-surface">
+          <div className="sticky left-0 z-20 flex h-8 items-center justify-center border-r border-border/70 bg-surface">
             <Checkbox checked={allSelected} onCheckedChange={(c) => onSelect(c ? new Set(rows.map((r) => r.id)) : new Set())} />
           </div>
           {fields.map((f, ci) => {
             const sort = config.sorts.find((s) => s.field === f.key);
             return (
-              <div key={f.key} className={cn("group/h relative flex h-10 items-center border-r border-border", f.key === def.primary && "sticky left-[44px] z-20 bg-surface shadow-[2px_0_0_0_var(--border)]")}>
+              <div key={f.key} className={cn("group/h relative flex h-8 items-center border-r border-border/70 text-[11.5px] uppercase tracking-wide", f.key === def.primary && "sticky left-[44px] z-20 bg-surface shadow-[2px_0_0_0_var(--border)]")}>
                 <Dropdown>
-                  <DropdownTrigger className="flex h-full w-full min-w-0 items-center gap-1.5 px-2 text-left font-medium text-muted outline-none hover:bg-hover data-[state=open]:bg-hover">
+                  <DropdownTrigger className="flex h-full w-full min-w-0 items-center gap-1.5 px-2 text-left font-medium text-subtle outline-none hover:bg-hover data-[state=open]:bg-hover">
                     <Icon name={fieldIcon(f)} className="size-3.5 shrink-0 text-subtle" />
                     <span className="truncate">{tr(f.label)}</span>
                     {sort && (sort.dir === "asc" ? <ArrowUp className="size-3 shrink-0 text-accent" /> : <ArrowDown className="size-3 shrink-0 text-accent" />)}
@@ -179,7 +179,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
           })}
           <div />
           {/* Inline column filters */}
-          <div className="sticky left-0 z-20 flex h-9 items-center justify-center border-r border-t border-border bg-surface">
+          <div className="sticky left-0 z-20 flex h-8 items-center justify-center border-r border-t border-border/70 bg-surface">
             {config.filters.some((x) => x.id.startsWith("col:")) ? (
               <button
                 type="button"
@@ -194,7 +194,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
             )}
           </div>
           {fields.map((f) => (
-            <div key={f.key} className={cn("flex h-9 items-center border-r border-t border-border px-1", f.key === def.primary && "sticky left-[44px] z-20 bg-surface shadow-[2px_0_0_0_var(--border)]")}>
+            <div key={f.key} className={cn("flex h-8 items-center border-r border-t border-border/70 px-1", f.key === def.primary && "sticky left-[44px] z-20 bg-surface shadow-[2px_0_0_0_var(--border)]")}>
               <ColumnFilter field={f} config={config} onChange={onConfigChange} table={table} />
             </div>
           ))}
@@ -203,8 +203,8 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
 
         {/* Rows */}
         {rows.map((r, ri) => (
-          <div key={r.id} className={cn("group/r grid border-b border-border hover:bg-hover/60", selected.has(r.id) && "bg-accent/[.04]")} style={{ gridTemplateColumns: template }}>
-            <div className="sticky left-0 z-[3] flex h-10 items-center justify-center border-r border-border bg-surface text-xs text-subtle group-hover/r:bg-[color-mix(in_oklab,var(--hover)_60%,var(--surface))]">
+          <div key={r.id} className={cn("group/r grid border-b border-border/70 hover:bg-hover/60", selected.has(r.id) && "bg-accent/[.04]")} style={{ gridTemplateColumns: template }}>
+            <div className="sticky left-0 z-[3] flex h-[34px] items-center justify-center border-r border-border/70 bg-surface text-[11px] text-subtle group-hover/r:bg-[color-mix(in_oklab,var(--hover)_60%,var(--surface))]">
               <span className={cn("group-hover/r:hidden", selected.has(r.id) && "hidden")}>{ri + 1}</span>
               <span className={cn("hidden group-hover/r:block", selected.has(r.id) && "block")}>
                 <Checkbox
@@ -225,7 +225,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
               const primary = f.key === def.primary;
               const close = () => setEditing(null);
               const cellCls = cn(
-                "relative flex h-10 min-w-0 items-center border-r border-border px-2",
+                "relative flex h-[34px] min-w-0 items-center border-r border-border/70 px-2",
                 ["number", "currency"].includes(f.type) && "justify-end",
                 primary && "sticky left-[44px] z-[2] cursor-pointer bg-surface font-medium shadow-[2px_0_0_0_var(--border)] group-hover/r:bg-[color-mix(in_oklab,var(--hover)_60%,var(--surface))]",
                 isActive && "z-[2] ring-2 ring-inset ring-accent/60",
@@ -309,7 +309,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
         )}
 
         {/* New row */}
-        <button type="button" onClick={() => onCreate()} className="sticky left-0 flex h-10 w-full max-w-[100vw] items-center gap-2 border-b border-border px-3 text-left text-muted hover:bg-hover hover:text-fg">
+        <button type="button" onClick={() => onCreate()} className="sticky left-0 flex h-[34px] w-full max-w-[100vw] items-center gap-2 border-b border-border/70 px-3 text-left text-muted hover:bg-hover hover:text-fg">
           <Plus className="size-4" /> {t("new")}
         </button>
 

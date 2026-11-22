@@ -103,9 +103,40 @@ function TreeNode({ folder, depth, selected, onSelect, onDropItem, defaultOpen }
 /* ---------------------------------- page ----------------------------------- */
 
 export function FilesPage() {
+  const { tr } = useI18n();
+  const [syncing, setSyncing] = useState(false);
+  return (
+    <AppShell
+      title={tr({ fr: "Documents", en: "Documents" })}
+      actions={
+        <Button
+          size="md"
+          variant="ghost"
+          onClick={() => {
+            setSyncing(true);
+            api("/ws/sync/drive-sync", { method: "POST" }).then(() => toast.success(tr({ fr: "Synchronisation lancée", en: "Sync started" }))).finally(() => setTimeout(() => setSyncing(false), 3000));
+          }}
+          title={tr({ fr: "Synchroniser le Drive", en: "Sync Drive" })}
+        >
+          <RefreshCw className={cn(syncing && "animate-spin")} /> <span className="max-sm:hidden">{tr({ fr: "Synchroniser", en: "Sync" })}</span>
+        </Button>
+      }
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <DocsTabs active="files" />
+        <Explorer />
+      </div>
+    </AppShell>
+  );
+}
+
+/** Drive explorer (tree, breadcrumb, list / icons, preview, rename / move / archive / delete).
+ *  With `root`, it is scoped to that folder (e.g. a client's Drive folder). */
+export function Explorer({ root }: { root?: Folder }) {
   const { tr, locale } = useI18n();
-  const { data: roots = [] } = useQuery({ queryKey: ["drive", "roots"], queryFn: () => api<Folder[]>("/ws/drive/roots") });
-  const [folder, setFolder] = useState<Folder | null>(null);
+  const { data: allRoots = [] } = useQuery({ queryKey: ["drive", "roots"], queryFn: () => api<Folder[]>("/ws/drive/roots"), enabled: !root });
+  const roots = root ? [root] : allRoots;
+  const [folder, setFolder] = useState<Folder | null>(root ?? null);
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [type, setType] = useState<"all" | "pdf" | "doc" | "sheet" | "media">("all");
@@ -230,16 +261,7 @@ export function FilesPage() {
       : {};
 
   return (
-    <AppShell
-      title={tr({ fr: "Documents", en: "Documents" })}
-      actions={
-        <Button size="md" variant="ghost" onClick={() => api("/ws/sync/drive-sync", { method: "POST" }).then(() => toast.success(tr({ fr: "Synchronisation lancée", en: "Sync started" })))} title={tr({ fr: "Synchroniser le Drive", en: "Sync Drive" })}>
-          <RefreshCw className={cn(isFetching && "animate-spin")} /> <span className="max-sm:hidden">{tr({ fr: "Synchroniser", en: "Sync" })}</span>
-        </Button>
-      }
-    >
-      <div className="flex h-full min-h-0 flex-col">
-        <DocsTabs active="files" />
+    <>
         <div className="flex min-h-0 flex-1">
           {/* Tree */}
           <aside className="relative hidden shrink-0 border-r border-border md:block" style={{ width: treeW.width }}>
@@ -377,7 +399,6 @@ export function FilesPage() {
           {/* Preview + links */}
           {selected && <Inspector doc={selected} onClose={() => setSelected(null)} onFull={() => setFull(selected)} />}
         </div>
-      </div>
       {full && <PreviewOverlay doc={full} onClose={() => setFull(null)} />}
       <Dropdown open={Boolean(ctx)} onOpenChange={(o) => !o && setCtx(null)}>
         <DropdownTrigger asChild>
@@ -389,7 +410,7 @@ export function FilesPage() {
       </Dropdown>
       <RenameDialog doc={renaming} onClose={() => setRenaming(null)} onSave={(d, n) => actions.rename(d, n)} />
       <MoveDialog doc={moving} roots={roots} onClose={() => setMoving(null)} onMove={(d, f) => actions.move(d, f.id, f.name)} />
-    </AppShell>
+    </>
   );
 }
 

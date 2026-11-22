@@ -39,7 +39,7 @@ export function RecordDetail({ table, id, onClose, full }: { table: TableKey; id
   const longFields = def.fields.filter((f) => f.type === "longtext");
   const propFields = def.fields.filter((f) => f.key !== def.primary && f.type !== "longtext" && f.type !== "lines" && f.type !== "sections" && (f.key !== "lastName" || table !== "person"));
   const sectionFields = def.fields.filter((f) => f.type === "sections");
-  const docKind = table === "quote" || table === "invoice" ? table : null;
+  const docKind = table === "quote" ? "quote" : table === "transaction" && row.kind === "invoice" ? "invoice" : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">

@@ -6,6 +6,7 @@ import { drive, FOLDER, googleConfigured } from "@erp/google";
 import { round2, toCAD } from "@erp/shared";
 import type { AppEnv } from "../lib/types";
 import { queue } from "../lib/queue";
+import { loadLedger } from "../lib/ledger";
 
 export const workspace = new Hono<AppEnv>();
 const ADMIN = "contact@otopio.ca";
@@ -15,7 +16,7 @@ const ADMIN = "contact@otopio.ca";
 workspace.get("/clients", async (c) => {
   const orgs = await db.select().from(schema.organization).where(inArray(schema.organization.type, ["client"])).orderBy(asc(schema.organization.name));
   const [invoices, projects, comms] = await Promise.all([
-    db.select().from(schema.invoice),
+    db.select().from(schema.transaction).where(eq(schema.transaction.kind, "invoice")),
     db.select().from(schema.project),
     db.select({ org: schema.communication.organizationId, last: sql<string>`max(${schema.communication.occurredAt})`, n: sql<number>`count(*)::int` }).from(schema.communication).groupBy(schema.communication.organizationId),
   ]);
@@ -41,13 +42,13 @@ workspace.get("/clients/:id", async (c) => {
   const [people, projects, invoices, quotes, comms, tickets, docs, events, tx] = await Promise.all([
     db.select().from(schema.person).where(eq(schema.person.organizationId, id)),
     db.select().from(schema.project).where(eq(schema.project.organizationId, id)).orderBy(desc(schema.project.startDate)),
-    db.select().from(schema.invoice).where(eq(schema.invoice.organizationId, id)).orderBy(desc(schema.invoice.issueDate)),
+    db.select().from(schema.transaction).where(and(eq(schema.transaction.kind, "invoice"), eq(schema.transaction.organizationId, id))).orderBy(desc(schema.transaction.date)),
     db.select().from(schema.quote).where(eq(schema.quote.organizationId, id)).orderBy(desc(schema.quote.issueDate)),
     db.select().from(schema.communication).where(eq(schema.communication.organizationId, id)).orderBy(desc(schema.communication.occurredAt)).limit(40),
     db.select().from(schema.ticket).where(eq(schema.ticket.organizationId, id)).orderBy(desc(schema.ticket.createdAt)),
     db.select().from(schema.document).where(and(eq(schema.document.organizationId, id), eq(schema.document.isFolder, false))).orderBy(desc(schema.document.modifiedAt)).limit(60),
     db.select().from(schema.event).where(eq(schema.event.organizationId, id)).orderBy(desc(schema.event.startAt)).limit(200),
-    db.select().from(schema.transaction),
+    loadLedger(),
   ]);
   const projectIds = projects.map((p) => p.id);
   const tasks = projectIds.length ? await db.select().from(schema.task).where(inArray(schema.task.projectId, projectIds)) : [];
@@ -80,7 +81,7 @@ workspace.get("/clients/:id", async (c) => {
     },
     people,
     projects,
-    invoices,
+    invoices: invoices.map((i) => ({ ...i, issueDate: i.date, title: i.label })),
     quotes,
     communications: comms,
     tickets,
@@ -88,7 +89,7 @@ workspace.get("/clients/:id", async (c) => {
     documents: docs,
     upcoming: events.filter((e) => e.startAt.getTime() >= now).sort((a, b) => a.startAt.getTime() - b.startAt.getTime()).slice(0, 6),
     driveUrl: org.driveFolderId ? `https://drive.google.com/drive/folders/${org.driveFolderId}` : null,
-    payments: tx.filter((t) => live.some((i) => i.id === t.invoiceId)),
+    payments: tx.cash.filter((t) => live.some((i) => i.id === t.invoiceId)),
   });
 });
 
@@ -201,6 +202,38 @@ workspace.patch("/drive/file/:id", async (c) => {
   return c.json({ ok: true, path: newPath });
 });
 
+/** Create a folder (parent = folder id or shared drive id). Returns the existing one if the name is taken. */
+workspace.post("/drive/folder", async (c) => {
+  const { parent, name } = (await c.req.json()) as { parent: string; name: string };
+  const [dup] = await db.select().from(schema.document).where(and(eq(schema.document.parentId, parent), eq(schema.document.title, name), eq(schema.document.isFolder, true)));
+  if (dup) return c.json({ id: dup.driveFileId, existed: true });
+  const p = await docByDrive(parent);
+  let driveId = p?.driveId ?? null;
+  let parentPath = p?.path ?? null;
+  if (!p) {
+    // shared drive root
+    const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(eq(schema.document.driveId, parent)).limit(1);
+    if (!any?.path) return c.json({ error: "Parent introuvable" }, 400);
+    driveId = parent;
+    parentPath = any.path.split("/")[0]!;
+  }
+  const f = await drive.createFolder(ADMIN, name, parent);
+  await db.insert(schema.document).values({ title: name, kind: "document", type: "free", driveFileId: f.id, driveId, parentId: parent, path: `${parentPath}/${name}`, mimeType: FOLDER, isFolder: true });
+  return c.json({ id: f.id, existed: false }, 201);
+});
+
+/** Rename a shared drive (and rewrite the indexed paths). */
+workspace.post("/drive/shared/:id/rename", async (c) => {
+  const id = c.req.param("id");
+  const { name } = (await c.req.json()) as { name: string };
+  const [any] = await db.select({ path: schema.document.path }).from(schema.document).where(eq(schema.document.driveId, id)).limit(1);
+  const old = any?.path?.split("/")[0];
+  if (!old) return c.json({ error: "Drive introuvable" }, 404);
+  await drive.updateSharedDrive(ADMIN, id, { name });
+  await db.execute(sql`update ${schema.document} set path = ${name} || substr(path, ${old.length + 1}) where drive_id = ${id} and (path = ${old} or path like ${`${old.replace(/[%_]/g, "\$&")}/%`})`);
+  return c.json({ ok: true, from: old, to: name });
+});
+
 /** Archive = move into the drive's "_Archives" folder (created once, kept out of searches). */
 workspace.post("/drive/file/:id/archive", async (c) => {
   const id = c.req.param("id");
@@ -248,12 +281,8 @@ workspace.post("/sync/:job", async (c) => {
 
 /** Items needing attention: expenses / invoices without justificatif, uncategorised expenses, bank lines not matched. */
 workspace.get("/alerts", async (c) => {
-  const [bills, invoices, txs, ents] = await Promise.all([
-    db.select().from(schema.bill),
-    db.select().from(schema.invoice),
-    db.select().from(schema.transaction),
-    db.select().from(schema.legalEntity),
-  ]);
+  const [ledger, ents] = await Promise.all([loadLedger(), db.select().from(schema.legalEntity)]);
+  const { expenses: bills, invoices, cash: txs } = ledger;
   const code = new Map(ents.map((e) => [e.id, e.code]));
   const proBills = bills.filter((b) => b.status !== "cancelled" && b.scope === "pro" && (b.paidBy === "entity" || b.paidBy === "reimburse") && Number(b.total) > 0);
   const toReimburse = bills.filter((b) => b.paidBy === "reimburse" && b.status !== "paid" && b.status !== "cancelled");
@@ -261,7 +290,7 @@ workspace.get("/alerts", async (c) => {
   const uncategorised = proBills.filter((b) => b.category === "other");
   const invMissing = invoices.filter((i) => !["draft", "cancelled", "lost"].includes(i.status) && !i.fileUrl);
   const billIds = new Set(txs.map((t) => t.billId).filter(Boolean));
-  const unmatchedTx = txs.filter((t) => t.source === "qonto" && t.nature === "operating" && (t.side === "debit" ? !t.billId : !t.invoiceId));
+  const unmatchedTx = txs.filter((t) => t.source === "qonto" && t.nature === "operating" && !t.docId);
   const slim = (b: (typeof bills)[number]) => ({ id: b.id, label: b.label, date: b.issueDate, amount: Number(b.total), currency: b.currency, entity: code.get(b.legalEntityId) ?? "" });
   return c.json({
     total: missing.length + uncategorised.length + invMissing.length + unmatchedTx.length,
@@ -333,7 +362,7 @@ workspace.post("/automation/:id/undo", async (c) => {
   const undo = (a?.changes as { undo?: { deleteRecord?: { table: string; id: string }; trashDriveFile?: string | null; renameDriveFile?: { id: string; name: string } } } | null)?.undo;
   if (!a || !undo) return c.json({ error: "Rien à annuler" }, 400);
   if (undo.deleteRecord) {
-    const t = undo.deleteRecord.table === "communication" ? schema.communication : undo.deleteRecord.table === "bill" ? schema.bill : null;
+    const t = undo.deleteRecord.table === "communication" ? schema.communication : undo.deleteRecord.table === "bill" || undo.deleteRecord.table === "transaction" ? schema.transaction : null;
     if (t) await db.delete(t).where(eq(t.id, undo.deleteRecord.id));
   }
   if (undo.trashDriveFile && googleConfigured()) await drive.update(ADMIN, undo.trashDriveFile, { trashed: true } as never).catch(() => {});
