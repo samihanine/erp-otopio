@@ -187,7 +187,7 @@ export function FinancePage() {
                 <ComposedChart data={data?.series?.[grain] ?? data?.monthly ?? []} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke="var(--border)" />
                   <XAxis dataKey="month" tickFormatter={(m: string) => (m.length === 4 ? m : `${monthLabel(m)}${year === "all" ? ` ${m.slice(2, 4)}` : ""}`)} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--subtle)" }} />
-                  <YAxis tickLine={false} axisLine={false} width={56} tick={{ fontSize: 11, fill: "var(--subtle)" }} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+                  <YAxis domain={[0, "auto"]} tickLine={false} axisLine={false} width={56} tick={{ fontSize: 11, fill: "var(--subtle)" }} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
                   <RTooltip
                     cursor={{ fill: "var(--hover)" }}
                     formatter={(v) => money(Number(v))}
@@ -196,7 +196,7 @@ export function FinancePage() {
                   />
                   <Bar dataKey="revenue" name={t("revenue")} fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={22} />
                   <Bar dataKey="expenses" name={t("expenses")} fill="#ec4899" radius={[6, 6, 0, 0]} maxBarSize={22} />
-                  <Line type="monotone" dataKey="collected" name={t("collected")} stroke="#10b981" strokeWidth={2} dot={false} />
+                  <Line type="linear" dataKey="collected" name={t("collected")} stroke="#10b981" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
