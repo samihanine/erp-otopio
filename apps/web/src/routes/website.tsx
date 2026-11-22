@@ -60,7 +60,7 @@ export function WebsitePage() {
           </div>
 
           {/* CMS: content published on otopio.ca (server-side rendered from the ERP) */}
-          <div className="mt-6 grid gap-3 md:grid-cols-3">
+          <div className="mt-6 grid gap-3 md:grid-cols-3 [&>*]:min-w-0">
             {(["artifact", "team_member", "article"] as const).map((k) => {
               const def = TABLES[k];
               const rows = (k === "artifact" ? artifacts : k === "team_member" ? team : articles)?.rows ?? [];
@@ -144,7 +144,7 @@ export function WebsitePage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
+          <div className="mt-6 grid gap-6 lg:grid-cols-3 [&>*]:min-w-0">
             <Panel title={`${tr({ fr: "Pages populaires", en: "Top pages" })}${data?.pagesDays ? ` · ${data.pagesDays} j` : ""}`}>
               {data?.pages?.map((p) => <BarRow key={p.path} label={<span className="font-mono text-xs">{p.path}</span>} value={p.views} max={data.pages[0]!.views} color="#2563eb" fmt={n} />)}
               {!data?.pages?.length && <p className="text-xs text-subtle">—</p>}
@@ -169,7 +169,7 @@ export function WebsitePage() {
           </div>
 
           {/* Content pipeline */}
-          <div className="mt-10 grid gap-6 lg:grid-cols-2">
+          <div className="mt-10 grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
             <ContentList title={tr(TABLES.article.label)} table="article" rows={articles?.rows ?? []} sub={(r) => (r.targetQuery ? `🎯 ${r.targetQuery}` : "")} />
             <ContentList title={tr(TABLES.post.label)} table="post" rows={posts?.rows ?? []} sub={(r) => String(r.network ?? "")} />
           </div>

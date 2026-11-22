@@ -52,7 +52,7 @@ export function TaxesView() {
         </p>
       </div>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-2">
+      <div className="mt-4 grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         {isLoading && !data ? [0, 1].map((i) => <Skeleton key={i} className="h-96 rounded-2xl" />) : null}
         {(data?.entities ?? []).map((e) => {
           const money = (n: number) => formatMoney(n, e.currency, locale);

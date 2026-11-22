@@ -218,7 +218,7 @@ export function FinancePage() {
           </div>
 
           {/* Donut + subscriptions */}
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <div className="mt-6 grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
             <div className="rounded-2xl border border-border p-5">
               <div className="text-[15px] font-semibold">{tr({ fr: "Dépenses par catégorie", en: "Expenses by category" })}</div>
               <div className="mt-2 grid items-center gap-4 sm:grid-cols-[200px_1fr]">
@@ -282,7 +282,7 @@ export function FinancePage() {
           </div>
 
           {/* Top clients + receivables */}
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <div className="mt-6 grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
             <div className="rounded-2xl border border-border p-5">
               <h3 className="text-[15px] font-semibold">{tr({ fr: "Meilleurs clients", en: "Top clients" })}</h3>
               <div className="mt-4 space-y-3">

@@ -82,7 +82,7 @@ export function HomePage() {
             <Stat label={t("outstanding")} value={fin ? formatMoney(fin.kpis.outstanding, "CAD", locale) : "…"} sub={t("consolidated")} to="/finance" />
           </div>
 
-          <div className="mt-12 grid gap-10 lg:grid-cols-2">
+          <div className="mt-12 grid gap-10 lg:grid-cols-2 [&>*]:min-w-0">
             <section>
               <div className="mb-3 flex items-baseline justify-between">
                 <h2 className="text-[15px] font-semibold">{tr({ fr: "Prochaines échéances", en: "Upcoming deadlines" })}</h2>
