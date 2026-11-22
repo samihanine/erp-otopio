@@ -248,13 +248,13 @@ export function AlertsCard() {
       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
         {groups.map((x) => (
           <div key={x.title} className="min-w-0">
-            <Link to="/db/$table" params={{ table: x.table }} search={{}} className="text-[12.5px] font-semibold hover:underline">
+            <Link to="/db/$table" params={{ table: x.table }} search={{}} className="block truncate text-[12.5px] font-semibold hover:underline">
               {x.title} ({x.g.count})
             </Link>
             <ul className="mt-0.5 space-y-0.5 text-[12px] text-muted">
               {x.g.items.slice(0, 3).map((i) => (
                 <li key={i.id} className="truncate">
-                  <Link to="/db/$table/$id" params={{ table: x.table, id: i.id }} className="hover:underline">
+                  <Link to="/db/$table/$id" params={{ table: x.table, id: i.id }} className="block truncate hover:underline">
                     {i.entity} · {i.date} · {i.label} · {formatMoney(i.amount, i.currency, locale)}
                   </Link>
                 </li>

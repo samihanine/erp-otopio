@@ -89,7 +89,7 @@ export function FinancePage() {
         <div className="flex items-center gap-2">
           <Combobox
             size="md"
-            className="w-44"
+            className="w-40 md:w-44"
             value={year}
             onChange={(v) => setYear(v ?? "all")}
             options={["all", ...years].map((y) => ({ value: y, label: y === "all" ? tr({ fr: "Toutes les années", en: "All years" }) : y }))}
@@ -109,10 +109,10 @@ export function FinancePage() {
       }
     >
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-7xl px-8 pb-16 pt-8">
+        <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h1 className="text-[28px] font-semibold tracking-tight">
+              <h1 className="text-[24px] font-semibold tracking-tight md:text-[28px]">
                 {t("finance")} <span className="font-serif text-[26px] font-normal italic text-muted">{periodLabel}</span>
               </h1>
             </div>
@@ -351,6 +351,7 @@ function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) =>
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
         <h3 className="mr-2 text-[15px] font-semibold">{tr({ fr: "Transactions", en: "Transactions" })}</h3>
         <Segmented
+          className="no-scrollbar max-w-full overflow-x-auto"
           value={kind}
           onChange={(v) => {
             setKind(v);
@@ -363,11 +364,11 @@ function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) =>
             { value: "missing", label: `${tr({ fr: "Justificatif manquant", en: "Missing receipt" })}${missingCount ? ` · ${missingCount}` : ""}` },
           ]}
         />
-        <div className="ml-auto flex items-center gap-2">
-          <Combobox size="md" className="w-40" value={month} onChange={(v) => setMonth(v ?? "all")} options={[{ value: "all", label: tr({ fr: "Tous les mois", en: "All months" }) }, ...monthsAvail.map((m) => ({ value: m, label: fmtDate(`${m}-01`, locale, { month: "long", year: "numeric" }) }))]} />
+        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+          <Combobox size="md" className="min-w-0 flex-1 sm:w-40 sm:flex-none" value={month} onChange={(v) => setMonth(v ?? "all")} options={[{ value: "all", label: tr({ fr: "Tous les mois", en: "All months" }) }, ...monthsAvail.map((m) => ({ value: m, label: fmtDate(`${m}-01`, locale, { month: "long", year: "numeric" }) }))]} />
           <Combobox
             size="md"
-            className="w-44"
+            className="min-w-0 flex-1 sm:w-44 sm:flex-none"
             value={sort}
             onChange={(v) => setSort(v ?? "date")}
             options={[
@@ -378,7 +379,31 @@ function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) =>
           />
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-border md:hidden">
+        {list.slice(0, limit).map((r) => {
+          const o = r.category ? catField.options!.find((x) => x.value === r.category) : null;
+          return (
+            <button key={`${r.table}:${r.id}`} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: r.table, id: r.id } })} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-hover">
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: r.side === "income" ? "#10b9811a" : `${HEX[o?.color ?? "gray"]}1f` }}>
+                {r.hasFile ? <CheckCircle2 className="size-4 text-emerald-600" /> : <FileWarning className="size-4 text-amber-500" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13.5px] font-medium">{r.label}</span>
+                <span className="block truncate text-[11.5px] text-subtle">
+                  {r.date ? fmtDate(r.date, locale, { day: "numeric", month: "short", year: "2-digit" }) : "—"} · {r.entity} · {r.side === "income" ? tr({ fr: "Recette", en: "Income" }) : o ? tr(o.label) : r.category}
+                  {r.reimburse ? ` · ${tr({ fr: "à rembourser", en: "reimburse" })}` : ""}
+                </span>
+              </span>
+              <span className={cn("shrink-0 text-right text-[13px] font-semibold tabular-nums", r.side === "income" && "text-emerald-700 dark:text-emerald-400")}>
+                {r.side === "income" ? "+" : "−"} {money(r.amount)}
+                {r.currency !== cur && <span className="block text-[10.5px] font-normal text-subtle">{formatMoney(r.original, r.currency, locale)}</span>}
+              </span>
+            </button>
+          );
+        })}
+        {!list.length && <div className="p-8 text-center text-[13px] text-subtle">{tr({ fr: "Aucune ligne pour ce filtre.", en: "No rows for this filter." })}</div>}
+      </div>
+      <div className="overflow-x-auto max-md:hidden">
         <table className="w-full min-w-[760px] text-[13px]">
           <thead className="bg-surface-2/50 text-left text-[11px] uppercase tracking-wider text-subtle">
             <tr>

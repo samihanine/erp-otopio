@@ -43,7 +43,7 @@ export function WebsitePage() {
   return (
     <AppShell title={t("website")}>
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-7xl px-8 pb-16 pt-8">
+        <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="grid size-11 place-items-center rounded-2xl bg-navy text-sky-brand">
@@ -206,13 +206,13 @@ function ContentList({ title, table, rows, sub }: { title: string; table: "artic
     <div className="rounded-xl border border-border">
       <div className="flex items-center gap-2 border-b border-border p-4">
         <TableTile icon={def.icon} color={def.color} />
-        <span className="text-[15px] font-semibold">{title}</span>
-        <div className="ml-3 flex h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+        <span className="min-w-0 truncate text-[15px] font-semibold">{title}</span>
+        <div className="ml-3 flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2">
           {counts.map(({ o, n }) => (
             <div key={o.value} style={{ width: `${(n / rows.length) * 100}%`, background: HEX[o.color] }} />
           ))}
         </div>
-        <Link to="/db/$table" params={{ table }} className="ml-3 text-[13px] text-muted hover:text-fg">
+        <Link to="/db/$table" params={{ table }} className="ml-3 shrink-0 whitespace-nowrap text-[13px] text-muted hover:text-fg">
           {tr({ fr: "Ouvrir", en: "Open" })} →
         </Link>
       </div>

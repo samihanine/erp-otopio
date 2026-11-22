@@ -80,7 +80,7 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
-          className={cn("h-6 rounded-md px-2.5 text-xs font-medium text-muted transition", value === o.value && "bg-surface text-fg shadow-card ring-1 ring-border")}
+          className={cn("h-6 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs font-medium text-muted transition", value === o.value && "bg-surface text-fg shadow-card ring-1 ring-border")}
         >
           {o.label}
         </button>

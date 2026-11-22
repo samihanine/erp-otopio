@@ -46,7 +46,7 @@ export function SettingsPage() {
   return (
     <AppShell title={t("settings")}>
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-8 pb-16 pt-8">
+        <div className="mx-auto max-w-4xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
           <h1 className="text-[28px] font-semibold tracking-tight">{t("settings")}</h1>
           <Segmented
             className="mt-5 flex-wrap"

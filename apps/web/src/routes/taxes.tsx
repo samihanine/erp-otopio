@@ -58,7 +58,7 @@ export function TaxesView() {
           const money = (n: number) => formatMoney(n, e.currency, locale);
           return (
             <div key={e.code} className="overflow-hidden rounded-2xl border border-border">
-              <div className="flex items-center gap-3 border-b border-border p-5" style={{ background: `${e.color}0d` }}>
+              <div className="flex flex-wrap items-center gap-3 border-b border-border p-4 sm:p-5" style={{ background: `${e.color}0d` }}>
                 <span className="grid size-10 place-items-center rounded-xl text-xl" style={{ background: `${e.color}1f` }}>
                   {FLAG[e.country] ?? e.country}
                 </span>
@@ -75,7 +75,7 @@ export function TaxesView() {
                 </div>
               </div>
 
-              <div className="space-y-5 p-5">
+              <div className="space-y-5 p-4 sm:p-5">
                 {/* settings */}
                 <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
                   {e.code === "MGS" ? (
@@ -115,7 +115,7 @@ export function TaxesView() {
                   ].map(([l, v, s]) => (
                     <div key={String(l)} className="rounded-xl bg-surface-2/60 px-3 py-2.5">
                       <div className="text-[11.5px] text-muted">{l}</div>
-                      <div className={cn("mt-0.5 text-[15px] font-semibold tabular-nums", Number(v) < 0 && "text-rose-600")}>{money(Number(v))}</div>
+                      <div className={cn("mt-0.5 text-[13.5px] font-semibold tabular-nums sm:text-[15px]", Number(v) < 0 && "text-rose-600")}>{money(Number(v))}</div>
                       <div className="text-[11px] text-subtle">{s}</div>
                     </div>
                   ))}
@@ -136,7 +136,7 @@ export function TaxesView() {
                         <div key={l.key} className="px-3 py-2">
                           <div className="flex items-center gap-2 text-[13px]">
                             <span className="flex-1">{l.label}</span>
-                            <span className="text-xs text-subtle">{l.rate}</span>
+                            <span className="text-xs text-subtle max-sm:hidden">{l.rate}</span>
                             <span className="w-24 text-right font-medium tabular-nums">{money(l.amount)}</span>
                           </div>
                           {l.note && <div className="mt-0.5 text-[11.5px] leading-snug text-subtle">{l.note}</div>}
@@ -172,7 +172,7 @@ export function TaxesView() {
             const n = days(d.date);
             const late = n < 0 && !d.done;
             return (
-              <div key={d.key} className={cn("flex items-start gap-3 px-5 py-3", d.done && "opacity-50")}>
+              <div key={d.key} className={cn("flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-3 sm:flex-nowrap sm:px-5", d.done && "opacity-50")}>
                 <button type="button" onClick={() => save(d.entity, { done: { [d.key]: !d.done } })} className="mt-0.5 text-muted hover:text-fg" title={tr({ fr: "Marquer comme fait", en: "Mark as done" })}>
                   {d.done ? <CheckCircle2 className="size-4 text-emerald-600" /> : <Circle className="size-4" />}
                 </button>
@@ -182,9 +182,10 @@ export function TaxesView() {
                     {d.done ? tr({ fr: "fait", en: "done" }) : n < 0 ? tr({ fr: `en retard de ${-n} j`, en: `${-n} d late` }) : n === 0 ? tr({ fr: "aujourd'hui", en: "today" }) : tr({ fr: `dans ${n} j`, en: `in ${n} d` })}
                   </div>
                 </div>
-                <span className="mt-0.5 shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium">{FLAG[d.entity === "OTP" ? "CA" : "FR"]} {d.entity}</span>
-                <div className="min-w-0 flex-1">
+                <span className="mt-0.5 shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium max-sm:hidden">{FLAG[d.entity === "OTP" ? "CA" : "FR"]} {d.entity}</span>
+                <div className="min-w-0 flex-1 max-sm:basis-full max-sm:pl-7">
                   <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium">
+                    <span className="sm:hidden">{FLAG[d.entity === "OTP" ? "CA" : "FR"]}</span>
                     {d.kind === "pay" ? <Landmark className="size-3.5 text-rose-500" /> : null}
                     {d.title}
                     {d.conditional && <span className="rounded bg-amber-50 px-1 text-[10.5px] font-normal text-amber-700 dark:bg-amber-950 dark:text-amber-300">{tr({ fr: "si seuil atteint", en: "if threshold met" })}</span>}
@@ -192,7 +193,7 @@ export function TaxesView() {
                   <div className="text-[12px] leading-snug text-muted">{d.detail}</div>
                   <div className="text-[11px] text-subtle">{d.authority}</div>
                 </div>
-                {d.amount != null && d.amount > 0 && <div className="shrink-0 text-right text-[13px] font-semibold tabular-nums">{formatMoney(d.amount, d.currency, locale)}</div>}
+                {d.amount != null && d.amount > 0 && <div className="shrink-0 text-right text-[13px] font-semibold tabular-nums max-sm:w-full max-sm:pl-7 max-sm:text-left">{formatMoney(d.amount, d.currency, locale)}</div>}
               </div>
             );
           })}

@@ -28,16 +28,16 @@ export function ClientsPage() {
   return (
     <AppShell title={tr({ fr: "Clients", en: "Clients" })}>
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-8 pb-20 pt-8">
+        <div className="mx-auto max-w-6xl px-4 pb-20 pt-6 md:px-8 md:pt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight">{tr({ fr: "Clients", en: "Clients" })}</h1>
               <p className="text-[13px] text-muted">{tr({ fr: "Un tableau de bord par client, synchronisé avec son dossier Drive.", en: "One dashboard per client, synced with its Drive folder." })}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <div className="relative min-w-0 flex-1 sm:flex-none">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-subtle" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr({ fr: "Rechercher…", en: "Search…" })} className="h-8 w-56 rounded-lg border border-border pl-8 pr-2 text-[13px] outline-none focus:ring-3 focus:ring-accent/15" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr({ fr: "Rechercher…", en: "Search…" })} className="h-8 w-full rounded-lg border border-border pl-8 sm:w-56 pr-2 text-[13px] outline-none focus:ring-3 focus:ring-accent/15" />
               </div>
               <Segmented value={filter} onChange={setFilter} options={[{ value: "active", label: tr({ fr: "Actifs", en: "Active" }) }, { value: "all", label: tr({ fr: "Tous", en: "All" }) }]} />
               <Button

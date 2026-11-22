@@ -41,7 +41,7 @@ export function DocumentsPage() {
     <AppShell title={t("documents")}>
       <DocsTabs active="models" />
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-8 pb-16 pt-8">
+        <div className="mx-auto max-w-6xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight">{t("documents")}</h1>

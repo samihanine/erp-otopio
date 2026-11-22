@@ -100,7 +100,7 @@ export function RecordDetail({ table, id, onClose, full }: { table: TableKey; id
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto px-8 pb-16 pt-8", full ? "max-w-4xl" : "max-w-none")}>
+        <div className={cn("mx-auto px-4 pb-16 pt-6 md:px-8 md:pt-8", full ? "max-w-4xl" : "max-w-none")}>
           {/* Title */}
           <div className="mb-1 flex items-center gap-3">
             {table === "person" && <Avatar name={recordLabel(table, row)} size={40} />}

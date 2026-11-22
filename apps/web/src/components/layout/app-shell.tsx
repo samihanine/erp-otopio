@@ -12,6 +12,9 @@ import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparat
 import { CommandMenu } from "./command-menu";
 import { OtopioLogo } from "./logo";
 
+/** sections shown in the mobile bottom tab bar (the rest is under « Plus ») */
+const TABS = ["home", "clients", "db", "finance"];
+
 type Section = { key: string; to: string; icon: typeof Home; label: DictKey; match: (p: string) => boolean };
 const SECTIONS: Section[] = [
   { key: "home", to: "/", icon: Home, label: "home", match: (p) => p === "/" },
@@ -35,7 +38,7 @@ export function ShellNavButtons() {
   if (!s) return null;
   return (
     <>
-      <button type="button" onClick={s.openMenu} className={cn("grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg", s.hasSidebar ? "lg:hidden" : "md:hidden")} aria-label="Menu">
+      <button type="button" onClick={s.openMenu} className={cn("grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg", s.hasSidebar ? "lg:hidden" : "hidden")} aria-label="Menu">
         <MenuIcon className="size-[18px]" />
       </button>
       {s.hasSidebar && s.wide ? (
@@ -117,6 +120,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
   const [sidebarOpen, setSidebarOpen] = usePref("erp.sidebar", true);
   const [menuOpen, setMenuOpen] = useState(false);
   const wide = useMedia("(min-width: 1024px)");
+  const md = useMedia("(min-width: 768px)");
   const sideW = useResizableWidth("erp.sidebar.width", 240, 180, 440);
   // close the mobile menu after navigating
   useEffect(() => setMenuOpen(false), [path]);
@@ -206,12 +210,46 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
                 <X className="size-4" />
               </Dl.Close>
             </div>
-            <nav className="grid grid-cols-4 gap-1 border-b border-border p-2 md:hidden">
-              {[...SECTIONS, { key: "settings", to: "/settings", icon: Settings, label: "settings" as DictKey, match: (p: string) => p.startsWith("/settings") }].map((s) => (
-                <RailLink key={s.key} to={s.to} icon={s.icon} label={t(s.label)} active={s.match(path)} />
-              ))}
-            </nav>
-            {sidebar ? <div className="flex min-h-0 flex-1 flex-col">{sidebar}</div> : null}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              {sidebar ? (
+                <div className="flex min-h-[40%] flex-col border-b border-border">{sidebar}</div>
+              ) : null}
+              <nav className={cn("flex flex-col gap-0.5 p-2", sidebar && "md:hidden")}>
+                {[...SECTIONS, { key: "settings", to: "/settings", icon: Settings, label: "settings" as DictKey, match: (p: string) => p.startsWith("/settings") }].map((s) => {
+                  const active = s.match(path);
+                  return (
+                    <Link key={s.key} to={s.to} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium text-muted transition hover:bg-hover hover:text-fg", active && "bg-fg/[.06] text-fg dark:bg-white/10")}>
+                      <s.icon className="size-[18px]" strokeWidth={active ? 2.2 : 1.8} />
+                      {t(s.label)}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+            <div className="flex items-center gap-2 border-t border-border p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+              <Avatar name={user?.name ?? user?.email} src={user?.image} size={32} className="ring-0" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium">{user?.name}</div>
+                <div className="truncate text-xs text-muted">{user?.email}</div>
+              </div>
+              <button type="button" onClick={() => setLocale(locale === "fr" ? "en" : "fr")} className="grid size-8 place-items-center rounded-lg text-[11px] font-semibold uppercase text-muted hover:bg-hover hover:text-fg" title={t("language")}>
+                {locale}
+              </button>
+              <button type="button" onClick={() => setDark(!dark)} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg" title={dark ? t("light") : t("dark")}>
+                {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await signOut();
+                  navigate({ to: "/login", search: {} });
+                }}
+                className="grid size-8 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg"
+                title={t("signOut")}
+              >
+                <LogOut className="size-4" />
+              </button>
+            </div>
           </Dl.Content>
         </Dl.Portal>
       </Dl.Root>
@@ -222,7 +260,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
-            className={cn("grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg", sidebar ? "lg:hidden" : "md:hidden")}
+            className={cn("grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-hover hover:text-fg", sidebar ? "lg:hidden" : "hidden")}
             aria-label="Menu"
           >
             <MenuIcon className="size-[18px]" />
@@ -249,7 +287,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
             <span className="truncate font-medium">{title ?? (section ? t(section.key === "db" ? "database" : section.label) : "")}</span>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            {actions}
+            {md ? actions : null}
             <button
               type="button"
               onClick={() => setCmdOpen(true)}
@@ -264,7 +302,25 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
             </button>
           </div>
         </header>}
+        {header && actions && !md ? <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-3 py-2 [&>*]:shrink-0">{actions}</div> : null}
         <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
+        {/* Mobile tab bar */}
+        <nav className="flex shrink-0 items-stretch border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+          {TABS.map((k) => {
+            const s = SECTIONS.find((x) => x.key === k)!;
+            const active = section?.key === k;
+            return (
+              <Link key={k} to={s.to} className={cn("flex flex-1 flex-col items-center gap-0.5 py-2 text-[10.5px] font-medium text-muted", active && "text-fg")}>
+                <s.icon className="size-5" strokeWidth={active ? 2.2 : 1.8} />
+                {t(s.label)}
+              </Link>
+            );
+          })}
+          <button type="button" onClick={() => setMenuOpen(true)} className={cn("flex flex-1 flex-col items-center gap-0.5 py-2 text-[10.5px] font-medium text-muted", !TABS.includes(section?.key ?? "") && "text-fg")}>
+            <MenuIcon className="size-5" />
+            {tr({ fr: "Plus", en: "More" })}
+          </button>
+        </nav>
       </div>
       <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} />
     </div>

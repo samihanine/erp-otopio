@@ -53,7 +53,7 @@ export function HomePage() {
   return (
     <AppShell title={t("home")}>
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-8 pb-20 pt-10">
+        <div className="mx-auto max-w-5xl px-4 pb-20 pt-6 md:px-8 md:pt-10">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <div className="text-[13px] capitalize text-muted">{fmtDate(today(), locale, { weekday: "long", day: "numeric", month: "long" })}</div>
