@@ -510,6 +510,8 @@ export const transaction = pgTable(
     currency: text("currency").notNull(),
     source: accountingProvider("source").notNull().default("none"),
     externalRef: text("external_ref"),
+    /** operating (default) | capital (share capital in/out) | transfer | tax — only "operating" credits count as revenue collected */
+    nature: text("nature").notNull().default("operating"),
     invoiceId: uuid("invoice_id").references(() => invoice.id, { onDelete: "set null" }),
     billId: uuid("bill_id").references(() => bill.id, { onDelete: "set null" }),
     note: text("note"),

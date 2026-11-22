@@ -1,0 +1,1 @@
+ALTER TABLE "transaction" ADD COLUMN "nature" text DEFAULT 'operating' NOT NULL;

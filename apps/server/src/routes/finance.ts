@@ -54,7 +54,7 @@ finance.get("/summary", async (c) => {
   // costs borne by a client (paid with their card / re-billed) are not ours
   const bl = yearBills.filter((b) => b.scope !== "perso" && b.paidBy !== "client");
   const perso = yearBills.filter((b) => b.scope !== "pro");
-  const tx = scoped(txs);
+  const tx = scoped(txs).filter((t) => (t.nature ?? "operating") === "operating" || t.side === "debit"); // share capital / internal transfers are not revenue
 
   const sum = (xs: number[]) => round2(xs.reduce((a, b) => a + b, 0));
   const invoicedHT = sum(issued.map((i) => conv(i.subtotal, i.currency)));
