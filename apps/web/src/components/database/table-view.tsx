@@ -225,7 +225,7 @@ export function TableView({ table, rows, refs, config, onConfigChange, onUpdate,
               const primary = f.key === def.primary;
               const close = () => setEditing(null);
               const cellCls = cn(
-                "relative flex h-[34px] min-w-0 items-center border-r border-border/70 px-2",
+                "relative flex h-[34px] min-w-0 items-center whitespace-nowrap border-r border-border/70 px-2",
                 ["number", "currency"].includes(f.type) && "justify-end",
                 primary && "sticky left-[44px] z-[2] cursor-pointer bg-surface font-medium shadow-[2px_0_0_0_var(--border)] group-hover/r:bg-[color-mix(in_oklab,var(--hover)_60%,var(--surface))]",
                 isActive && "z-[2] ring-2 ring-inset ring-accent/60",

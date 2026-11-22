@@ -492,7 +492,7 @@ export const TABLES: Record<TableKey, TableDef> = {
     searchFields: ["label", "number", "counterparty", "notes"],
     defaultSort: { field: "date", dir: "desc" },
     fields: [
-      { key: "date", label: L("Date", "Date"), type: "date", required: true, width: 110 },
+      { key: "date", label: L("Date", "Date"), type: "date", required: true, width: 125 },
       {
         key: "kind",
         label: L("Type", "Type"),
