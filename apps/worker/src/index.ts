@@ -97,7 +97,7 @@ const worker = new Worker(
       case "qonto-sync":
         return qontoConfigured() ? syncQonto() : null;
       case "personal-gmail-sync":
-        return syncPersonalGmail();
+        return syncPersonalGmail(Boolean(job.data?.full));
       case "ai-sync": {
         const comms = await summarizeCommunications();
         const clients = await summarizeClients();

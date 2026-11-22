@@ -43,7 +43,7 @@ const text = (m: Msg) => {
 
 const s3 = () => new S3Client({ endpoint: E.R2_ENDPOINT, accessKeyId: E.R2_ACCESS_KEY_ID, secretAccessKey: E.R2_SECRET_ACCESS_KEY, bucket: E.R2_BUCKET ?? "otopio-erp" });
 
-export async function syncPersonalGmail() {
+export async function syncPersonalGmail(full = false) {
   const rows = await db.select().from(schema.syncState).where(like(schema.syncState.key, "personal-google:%"));
   const entityRows = new Map(rows.filter((r) => r.key.startsWith("personal-google:entity:")).map((r) => [r.key.slice("personal-google:entity:".length), r.value]));
   const accounts = rows.filter((r) => !r.key.startsWith("personal-google:nonce:") && !r.key.startsWith("personal-google:entity:"));
@@ -53,7 +53,7 @@ export async function syncPersonalGmail() {
     const code = entityRows.get(email) ?? DEFAULTS[email];
     if (!code) continue; // accounts without an entity binding are never synced
     try {
-      out[email] = await syncAccount(email, a.value, code);
+      out[email] = await syncAccount(email, a.value, code, full);
     } catch (e) {
       out[email] = `error: ${(e as Error).message}`;
     }
@@ -61,7 +61,7 @@ export async function syncPersonalGmail() {
   return out;
 }
 
-async function syncAccount(email: string, sealed: string, code: string) {
+async function syncAccount(email: string, sealed: string, code: string, full = false) {
   const { refreshToken } = await unseal<{ refreshToken: string }>(sealed);
   const token = await accessToken(refreshToken);
   if (!token) throw new Error("token refresh failed");
@@ -80,8 +80,14 @@ async function syncAccount(email: string, sealed: string, code: string) {
 
   const stateKey = `pgmail:${email}:since`;
   const since = await getState(stateKey);
-  const q = since ? `after:${since} -in:spam -in:trash` : "newer_than:30d -in:spam -in:trash";
-  const list = await g<{ messages?: { id: string }[] }>(`messages?q=${encodeURIComponent(q)}&maxResults=100`);
+  // full = whole mailbox backfill (manual), otherwise incremental since the last run
+  const q = full ? "-in:spam -in:trash" : since ? `after:${since} -in:spam -in:trash` : "newer_than:30d -in:spam -in:trash";
+  const list: { messages: { id: string }[] } = { messages: [] };
+  for (let page: string | undefined, i = 0; i < (full ? 40 : 3); i++) {
+    const r = await g<{ messages?: { id: string }[]; nextPageToken?: string }>(`messages?q=${encodeURIComponent(q)}&maxResults=100${page ? `&pageToken=${page}` : ""}`);
+    list.messages.push(...(r.messages ?? []));
+    if (!(page = r.nextPageToken)) break;
+  }
   const stats = { seen: 0, labelled: 0, billsAttached: 0, billsCreated: 0 };
   const bills = await db.select().from(schema.bill).where(eq(schema.bill.legalEntityId, entity.id));
   for (const { id } of list.messages ?? []) {
@@ -106,6 +112,8 @@ async function syncAccount(email: string, sealed: string, code: string) {
     );
     if (!x.isSupplierInvoice) continue;
     const date = x.date ?? new Date(Number(m.internalDate)).toISOString().slice(0, 10);
+    const same = (b: (typeof bills)[number]) => b.currency === (x.currency || b.currency) && x.total != null && Math.abs(Number(b.total) - x.total) < 0.02 && Math.abs(+new Date(b.issueDate ?? date) - +new Date(date)) < 7 * 864e5;
+    if (bills.some((b) => b.fileUrl && same(b)) || bills.some((b) => b.externalRef === `gmail:${id}`)) continue; // already documented
     const att = await g<{ data: string }>(`messages/${id}/attachments/${pdfs[0]!.body!.attachmentId}`);
     const data = new Uint8Array(Buffer.from(att.data, "base64url"));
     const name = `${date} — ${x.supplier} — Facture — ${x.number ?? pdfs[0]!.filename}`.replace(/\.pdf$/i, "") + ".pdf";
