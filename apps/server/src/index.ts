@@ -18,6 +18,7 @@ import { internalKey, mcp, wellKnown } from "./routes/mcp";
 import { workspace } from "./routes/workspace";
 import { publicApi, websiteAdmin } from "./routes/website";
 import { workspaceGuard } from "./lib/workspace";
+import { autoFixAll } from "./lib/integrity";
 import { workspaces } from "./routes/workspaces";
 import { portal } from "./routes/portal";
 
@@ -89,6 +90,7 @@ if (process.env.STATIC_DIR) {
 }
 
 await ensureAdmin().catch((e) => console.error("[auth] ensureAdmin failed", e));
+await autoFixAll().catch((e) => console.error("[integrity] auto-fix failed", e));
 
 console.log(`[server] listening on :${env.port} (${env.appEnv})`);
 export default { port: env.port, fetch: app.fetch, idleTimeout: 60 };

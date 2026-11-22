@@ -52,8 +52,14 @@ export function TaxesView() {
         </p>
       </div>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+      {/* one structure per workspace: its tax estimate (left) and its deadlines (right) */}
+      <div className="mt-4 grid items-start gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] [&>*]:min-w-0">
         {isLoading && !data ? [0, 1].map((i) => <Skeleton key={i} className="h-96 rounded-2xl" />) : null}
+        {data && !data.entities.length && (
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-[13px] text-muted xl:col-span-2">
+            {tr({ fr: "Pas d'estimation fiscale automatique pour cette structure (seulement Otopio Inc. et Megascale).", en: "No automatic tax estimate for this structure (only Otopio Inc. and Megascale)." })}
+          </div>
+        )}
         {(data?.entities ?? []).map((e) => {
           const money = (n: number) => formatMoney(n, e.currency, locale);
           return (
@@ -122,6 +128,7 @@ export function TaxesView() {
                 </div>
 
                 {/* tax lines */}
+                <div className="grid gap-5 2xl:grid-cols-2 [&>*]:min-w-0">
                 {[
                   [tr({ fr: "Impôts & cotisations", en: "Income tax & contributions" }), e.taxes, e.totalIncomeTax],
                   [e.code === "OTP" ? tr({ fr: "Taxes de vente (TPS/TVQ)", en: "Sales taxes (GST/QST)" }) : tr({ fr: "TVA", en: "VAT" }), e.sales, e.totalSales],
@@ -145,6 +152,7 @@ export function TaxesView() {
                     </div>
                   </div>
                 ))}
+                </div>
 
                 <ul className="space-y-1 text-[11.5px] leading-snug text-subtle">
                   {e.notes.map((n, i) => (
@@ -158,10 +166,10 @@ export function TaxesView() {
             </div>
           );
         })}
-      </div>
 
       {/* calendar */}
-      <div className="mt-6 overflow-hidden rounded-2xl border border-border">
+      {deadlines.length > 0 && (
+      <div className="overflow-hidden rounded-2xl border border-border">
         <div className="flex items-center gap-2 border-b border-border px-5 py-3">
           <CalendarClock className="size-4 text-muted" />
           <h3 className="text-[15px] font-semibold">{tr({ fr: "Échéances", en: "Deadlines" })}</h3>
@@ -182,10 +190,8 @@ export function TaxesView() {
                     {d.done ? tr({ fr: "fait", en: "done" }) : n < 0 ? tr({ fr: `en retard de ${-n} j`, en: `${-n} d late` }) : n === 0 ? tr({ fr: "aujourd'hui", en: "today" }) : tr({ fr: `dans ${n} j`, en: `in ${n} d` })}
                   </div>
                 </div>
-                <span className="mt-0.5 shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium max-sm:hidden">{FLAG[d.entity === "OTP" ? "CA" : "FR"]} {d.entity}</span>
                 <div className="min-w-0 flex-1 max-sm:basis-full max-sm:pl-7">
                   <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium">
-                    <span className="sm:hidden">{FLAG[d.entity === "OTP" ? "CA" : "FR"]}</span>
                     {d.kind === "pay" ? <Landmark className="size-3.5 text-rose-500" /> : null}
                     {d.title}
                     {d.conditional && <span className="rounded bg-amber-50 px-1 text-[10.5px] font-normal text-amber-700 dark:bg-amber-950 dark:text-amber-300">{tr({ fr: "si seuil atteint", en: "if threshold met" })}</span>}
@@ -198,6 +204,8 @@ export function TaxesView() {
             );
           })}
         </div>
+      </div>
+      )}
       </div>
     </div>
   );

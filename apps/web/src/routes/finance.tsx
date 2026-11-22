@@ -122,7 +122,7 @@ export function FinancePage() {
       }
     >
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
+        <div className={cn("mx-auto px-4 pb-16 pt-6 md:px-8 md:pt-8", view === "taxes" ? "max-w-[1600px]" : "max-w-7xl")}>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-[24px] font-semibold tracking-tight md:text-[28px]">

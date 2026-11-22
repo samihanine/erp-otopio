@@ -1,3 +1,4 @@
+import { TabBar } from "@/components/ui/tab-bar";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -147,13 +148,7 @@ export function RecordDetail({ table, id, onClose, full }: { table: TableKey; id
           {def.translatable ? <TranslationsPanel table={table} row={row} onSave={(v) => save("translations", v)} /> : null}
 
           {/* Tabs */}
-          <div className="mt-8 flex gap-1 border-b border-border">
-            {(["related", "activity"] as const).map((k) => (
-              <button key={k} type="button" onClick={() => setTab(k)} className={cn("-mb-px border-b-2 px-2 pb-2 text-[13px] font-medium", tab === k ? "border-fg text-fg" : "border-transparent text-muted hover:text-fg")}>
-                {t(k)}
-              </button>
-            ))}
-          </div>
+          <TabBar className="mt-8" items={(["related", "activity"] as const).map((k) => ({ key: k, label: t(k), active: tab === k, onClick: () => setTab(k) }))} />
           <div className="pt-4">{tab === "related" ? <Related table={table} id={id} /> : <Activity table={table} id={id} locale={locale} />}</div>
         </div>
       </div>

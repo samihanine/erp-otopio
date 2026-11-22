@@ -13,8 +13,9 @@ import { accessToken, unseal } from "./personal";
 
 export const PROJECTS_DRIVE = process.env.DRIVE_PROJECTS_NAME ?? "Clients";
 export const ADMIN_DRIVE = process.env.DRIVE_ADMIN_NAME ?? "Administratif";
-const MGS_CLIENTS = "Megascale — Clients";
-const MGS_ADMIN = "Megascale — Administratif";
+/** Megascale: one shared drive holding « Clients » and « Administratif » (former two drives are merged into it) */
+const MGS_DRIVE = "Megascale";
+const LEGACY_MGS = ["Megascale — Clients", "Megascale — Administratif"];
 /** former names (before the Nov. 2026 reorganisation) */
 const ALIASES: Record<string, string> = { Projets: PROJECTS_DRIVE, "Admin Otopio": ADMIN_DRIVE };
 /** client folder layout (same categories as the portal uploads) */
@@ -77,44 +78,38 @@ export async function ensureStorage() {
   for (const ws of wss) {
     if (ws.code === "OTP") {
       if (ids[PROJECTS_DRIVE] && ids[ADMIN_DRIVE]) await saveDrive(ws, { clients: ids[PROJECTS_DRIVE], admin: ids[ADMIN_DRIVE] });
-    } else if (ws.code === "MGS") {
-      let created = false;
-      for (const name of [MGS_CLIENTS, MGS_ADMIN]) {
-        if (ids[name]) continue;
-        const d = await drive.createSharedDrive(ADMIN, name);
-        ids[name] = d.id;
-        created = true;
-        await log("drive-created", "legal_entity", ws.id, `Drive partagé « ${name} » créé pour Megascale`);
+      continue;
+    }
+    if (ws.code === "MGS") {
+      if (!ws.drive?.root) {
+        let root = ids[MGS_DRIVE];
+        if (!root) {
+          root = (await drive.createSharedDrive(ADMIN, MGS_DRIVE)).id;
+          ids[MGS_DRIVE] = root;
+          if (otp?.drive?.clients) await copyMembers(otp.drive.clients, [root]);
+          await log("drive-created", "legal_entity", ws.id, `Drive partagé « ${MGS_DRIVE} » créé (Clients + Administratif)`);
+        }
+        const legacy = [...new Set([ws.drive?.clients, ws.drive?.admin, ...LEGACY_MGS.map((n) => ids[n])].filter(Boolean) as string[])];
+        await saveDrive(ws, { root, legacy, clients: undefined, admin: undefined });
       }
-      if (created && otp?.drive?.clients) await copyMembers(otp.drive.clients, [ids[MGS_CLIENTS]!, ids[MGS_ADMIN]!]);
-      await saveDrive(ws, { clients: ids[MGS_CLIENTS], admin: ids[MGS_ADMIN] });
-    } else if (ws.drive?.personalEmail) {
+    } else if (ws.drive?.personalEmail && !ws.drive.folderId) {
       const subject = await subjectOf(ws);
       if (!subject) continue; // personal account not connected yet
-      if (!ws.drive.folderId) {
-        const root = await findOrCreateFolder(subject, "root", "ERP");
-        await saveDrive(ws, { folderId: root.id });
-      }
+      await saveDrive(ws, { folderId: (await findOrCreateFolder(subject, "root", "ERP")).id });
     }
-    if (ws.drive?.admin && !(await getState(`drive:sections:${ws.id}`))) {
-      const subject = (await subjectOf(ws))!;
-      for (const s of ADMIN_SECTIONS) await findOrCreateFolder(subject, ws.drive.admin, s);
-      await setState(`drive:sections:${ws.id}`, "1");
-    }
-    if (ws.drive?.folderId && !(await getState(`drive:sections:${ws.id}`))) {
-      const subject = await subjectOf(ws);
-      if (subject) {
-        await findOrCreateFolder(subject, ws.drive.folderId, "Clients");
-        const adm = await findOrCreateFolder(subject, ws.drive.folderId, "Administratif");
-        for (const s of ADMIN_SECTIONS) await findOrCreateFolder(subject, adm.id, s);
-        await setState(`drive:sections:${ws.id}`, "1");
-      }
-    }
+    const base = ws.drive?.root ?? ws.drive?.folderId;
+    if (!base || (ws.drive?.clientsFolder && ws.drive?.adminFolder)) continue;
+    const subject = await subjectOf(ws);
+    if (!subject) continue;
+    const clients = await findOrCreateFolder(subject, base, "Clients");
+    const adm = await findOrCreateFolder(subject, base, "Administratif");
+    for (const s of ADMIN_SECTIONS) await findOrCreateFolder(subject, adm.id, s);
+    await saveDrive(ws, { clientsFolder: clients.id, adminFolder: adm.id });
   }
   return wss;
 }
 
-/** Same people on the new Megascale drives as on the Otopio « Clients » drive. */
+/** Same people on the new Megascale drive as on the Otopio « Clients » drive. */
 async function copyMembers(from: string, to: string[]) {
   const perms = await drive.permissions(ADMIN, from, true).catch(() => []);
   for (const d of to)
@@ -125,10 +120,11 @@ async function copyMembers(from: string, to: string[]) {
 
 /** Root folders that hold client folders / admin sections for a workspace. */
 async function roots(ws: Ws, subject: string) {
-  if (ws.drive?.folderId) {
-    const clients = await findOrCreateFolder(subject, ws.drive.folderId, "Clients");
-    const admin = await findOrCreateFolder(subject, ws.drive.folderId, "Administratif");
-    return { clients: clients.id, admin: admin.id };
+  const base = ws.drive?.root ?? ws.drive?.folderId;
+  if (base) {
+    const clients = ws.drive?.clientsFolder ?? (await findOrCreateFolder(subject, base, "Clients")).id;
+    const admin = ws.drive?.adminFolder ?? (await findOrCreateFolder(subject, base, "Administratif")).id;
+    return { clients, admin };
   }
   return { clients: ws.drive?.clients ?? null, admin: ws.drive?.admin ?? null };
 }
@@ -159,13 +155,13 @@ function legacyAdminWs(path: string, byCode: Map<string, string>, fallback: stri
   return fallback;
 }
 
-type Ctx = { ws: Ws; rootName: string; rootId: string; byCode: Map<string, string>; clientFolders: Map<string, string> };
+/** prefix: name of the shared drive for Otopio Inc. (« Clients/… »); empty when the storage root holds the folders itself */
+type Ctx = { ws: Ws; prefix: string; rootId: string; byCode: Map<string, string>; clientFolders: Map<string, string> };
 
-async function upsertFile(f: DriveFile, ctx: Ctx, rel: string) {
-  const path = `${ctx.rootName}/${rel}`;
-  const top = rel.split("/")[0] ?? "";
-  const isClients = ctx.rootName.endsWith("Clients");
-  const orgId = isClients ? (ctx.clientFolders.get(top) ?? null) : null;
+async function upsertFile(f: DriveFile, ctx: Ctx, path: string) {
+  const parts = path.split("/");
+  const isClients = parts[0] === "Clients";
+  const orgId = isClients && parts[1] ? (ctx.clientFolders.get(parts[1]) ?? null) : null;
   const workspaceId = ctx.ws.code === "OTP" && !isClients ? legacyAdminWs(path, ctx.byCode, ctx.ws.id) : ctx.ws.id;
   const values = {
     workspaceId,
@@ -214,7 +210,7 @@ async function fullIndex(subject: string, ctx: Ctx, shared: boolean) {
     const p = f.parents?.[0];
     return p && p !== ctx.rootId && byId.has(p) ? `${relOf(byId.get(p)!)}/${f.name}` : f.name;
   };
-  for (const f of files) await upsertFile(f, ctx, relOf(f));
+  for (const f of files) await upsertFile(f, ctx, ctx.prefix ? `${ctx.prefix}/${relOf(f)}` : relOf(f));
   const ids = new Set(files.map((f) => f.id));
   const rows = await db.select({ id: schema.document.id, fid: schema.document.driveFileId }).from(schema.document).where(eq(schema.document.driveId, ctx.rootId));
   const gone = rows.filter((r) => r.fid && !ids.has(r.fid)).map((r) => r.id);
@@ -234,23 +230,29 @@ export async function syncDrive() {
       continue;
     }
     const clientFolders = await ensureClientFolders(ws).catch(() => new Map<string, string>());
-    const list: { name: string; id: string; shared: boolean }[] = ws.drive?.folderId
-      ? [{ name: "ERP", id: ws.drive.folderId, shared: false }]
-      : [
-          ...(ws.drive?.clients ? [{ name: ws.code === "MGS" ? MGS_CLIENTS : PROJECTS_DRIVE, id: ws.drive.clients, shared: true }] : []),
-          ...(ws.drive?.admin ? [{ name: ws.code === "MGS" ? MGS_ADMIN : ADMIN_DRIVE, id: ws.drive.admin, shared: true }] : []),
-        ];
+    const list: { name: string; id: string; shared: boolean }[] = ws.drive?.root
+      ? [{ name: "", id: ws.drive.root, shared: true }]
+      : ws.drive?.folderId
+        ? [{ name: "", id: ws.drive.folderId, shared: false }]
+        : [
+            ...(ws.drive?.clients ? [{ name: PROJECTS_DRIVE, id: ws.drive.clients, shared: true }] : []),
+            ...(ws.drive?.admin ? [{ name: ADMIN_DRIVE, id: ws.drive.admin, shared: true }] : []),
+          ];
+    // index rows left over from a former storage (moved drives / folders) are dropped
+    const keep = list.map((r) => r.id);
+    if (keep.length)
+      await db.delete(schema.document).where(and(eq(schema.document.workspaceId, ws.id), sql`${schema.document.driveFileId} is not null`, sql`${schema.document.driveId} is not null`, sql`${schema.document.driveId} not in (${sql.join(keep.map((k) => sql`${k}`), sql`, `)})`));
     for (const r of list) {
-      const ctx: Ctx = { ws, rootName: r.name === "ERP" ? "ERP" : r.name, rootId: r.id, byCode, clientFolders };
+      const ctx: Ctx = { ws, prefix: r.name, rootId: r.id, byCode, clientFolders };
       if (!r.shared) {
-        stats[`${ws.code}:${r.name}`] = await fullIndex(subject, ctx, false);
+        stats[`${ws.code}:${r.name || "root"}`] = await fullIndex(subject, ctx, false);
         continue;
       }
       const tokenKey = `drive:${r.id}:pageToken`;
       let token: string | null = await getState(tokenKey);
       if (!token) {
         const start = await drive.startPageToken(subject, r.id);
-        stats[`${ws.code}:${r.name}`] = await fullIndex(subject, ctx, true);
+        stats[`${ws.code}:${r.name || "root"}`] = await fullIndex(subject, ctx, true);
         await setState(tokenKey, start);
         continue;
       }
@@ -264,8 +266,8 @@ export async function syncDrive() {
           }
           const f = c.file;
           const [parent] = f.parents?.[0] ? await db.select({ path: schema.document.path }).from(schema.document).where(eq(schema.document.driveFileId, f.parents[0])) : [];
-          const parentRel = parent?.path?.split("/").slice(1).join("/");
-          await upsertFile(f, ctx, parentRel ? `${parentRel}/${f.name}` : f.name);
+          const base = ctx.prefix ? `${ctx.prefix}/${f.name}` : f.name;
+          await upsertFile(f, ctx, parent?.path ? `${parent.path}/${f.name}` : base);
           changed++;
         }
         if (res.newStartPageToken) {
@@ -275,7 +277,7 @@ export async function syncDrive() {
       }
       // A renamed/moved folder changes the path of its children → reindex when something changed
       if (changed) await fullIndex(subject, ctx, true);
-      stats[`${ws.code}:${r.name}`] = changed;
+      stats[`${ws.code}:${r.name || "root"}`] = changed;
     }
   }
   return stats;
@@ -295,7 +297,7 @@ export async function ensureClientFolders(ws: Ws, onlyOrgId?: string) {
   if (!subject) return map;
   const root = (await roots(ws, subject)).clients;
   if (!root) return map;
-  const folders = await drive.list(subject, `'${root}' in parents and mimeType='${FOLDER}' and trashed=false`, ws.drive?.folderId ? {} : { driveId: root });
+  const folders = await drive.list(subject, `'${root}' in parents and mimeType='${FOLDER}' and trashed=false`, ws.drive?.root ? { driveId: ws.drive.root } : ws.drive?.folderId ? {} : { driveId: root });
   const orgs = await db
     .select()
     .from(schema.organization)
@@ -415,18 +417,66 @@ async function splitDrives(wss: Ws[]) {
   const budget = { n: BATCH };
   const byCode = new Map(wss.map((w) => [w.code, w]));
   const otpAdmin = otp.drive.admin;
+  const norm = (x: string) => x.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // 0. Megascale: former « Megascale — Clients » / « Megascale — Administratif » drives merged into « Megascale »/Clients|Administratif
+  const mgs = byCode.get("MGS");
+  if (mgs?.drive?.root && mgs.drive.legacy?.length) {
+    const r = await roots(mgs, ADMIN);
+    const left: string[] = [];
+    for (const legacyId of mgs.drive.legacy) {
+      const d = (await drive.sharedDrives(ADMIN, true)).find((x) => x.id === legacyId);
+      if (!d) continue;
+      const target = /administratif/i.test(d.name) || legacyId === mgs.drive.admin ? r.admin! : r.clients!;
+      if (budget.n <= 0 || !(await transferTree(legacyId, ADMIN, target, budget, false))) {
+        left.push(legacyId);
+        continue;
+      }
+      await gfetch(ADMIN, SCOPES.drive, `https://www.googleapis.com/drive/v3/drives/${legacyId}?useDomainAdminAccess=true&allowItemDeletion=true`, { method: "DELETE" }).catch((e) => console.warn("[drive] delete legacy drive", (e as Error).message));
+      await log("drive-split", "legal_entity", mgs.id, `Drive « ${d.name} » fusionné dans « ${MGS_DRIVE}/${target === r.admin ? "Administratif" : "Clients"} »`);
+    }
+    await saveDrive(mgs, { legacy: left });
+    if (left.length) return;
+    // client records → their folder in « Megascale/Clients » (same name)
+    const folders = await drive.list(ADMIN, `'${r.clients}' in parents and mimeType='${FOLDER}' and trashed=false`, { driveId: mgs.drive.root });
+    for (const o of await db.select().from(schema.organization).where(eq(schema.organization.workspaceId, mgs.id))) {
+      const f = folders.find((x) => norm(x.name) === norm(o.name));
+      if (f && o.driveFolderId !== f.id) await db.update(schema.organization).set({ driveFolderId: f.id }).where(eq(schema.organization.id, o.id));
+    }
+  }
+
+  // 0b. duplicate client folders (same name) inside a workspace's « Clients » are merged into one
+  for (const ws of wss) {
+    const subject = await subjectOf(ws);
+    if (!subject) continue;
+    const root = (await roots(ws, subject)).clients;
+    if (!root) continue;
+    const folders = await drive.list(subject, `'${root}' in parents and mimeType='${FOLDER}' and trashed=false`, { corpora: "allDrives" });
+    const groups = new Map<string, DriveFile[]>();
+    for (const f of folders) groups.set(norm(f.name), [...(groups.get(norm(f.name)) ?? []), f]);
+    for (const dup of groups.values()) {
+      if (dup.length < 2 || budget.n <= 0) continue;
+      const linked = await db.select({ id: schema.organization.id, folder: schema.organization.driveFolderId }).from(schema.organization).where(inArray(schema.organization.driveFolderId, dup.map((d) => d.id)));
+      const keeper = dup.find((d) => linked.some((l) => l.folder === d.id)) ?? dup[0]!;
+      for (const other of dup.filter((d) => d.id !== keeper.id)) {
+        if (!(await transferTree(other.id, subject, keeper.id, budget, false))) continue;
+        await drive.update(subject, other.id, { trashed: true }).catch(() => {});
+        await db.update(schema.organization).set({ driveFolderId: keeper.id }).where(eq(schema.organization.driveFolderId, other.id));
+        await log("drive-merge", "legal_entity", ws.id, `Dossiers « ${keeper.name} » en double fusionnés (${ws.name})`);
+      }
+    }
+  }
 
   // 1. Administratif sections
   for (const section of await drive.list(ADMIN, `'${otpAdmin}' in parents and mimeType='${FOLDER}' and trashed=false`, { driveId: otpAdmin })) {
     for (const sub of await drive.list(ADMIN, `'${section.id}' in parents and mimeType='${FOLDER}' and trashed=false`, { driveId: otpAdmin })) {
       if (budget.n <= 0) return;
       if (/^megascale$/i.test(sub.name)) {
-        const mgs = byCode.get("MGS");
-        if (!mgs?.drive?.admin) continue;
-        const target = await findOrCreateFolder(ADMIN, mgs.drive.admin, section.name);
+        if (!mgs?.drive?.root) continue;
+        const target = await findOrCreateFolder(ADMIN, (await roots(mgs, ADMIN)).admin!, section.name);
         if (await transferTree(sub.id, ADMIN, target.id, budget, false)) {
           await drive.update(ADMIN, sub.id, { trashed: true });
-          await log("drive-split", "legal_entity", mgs.id, `« ${ADMIN_DRIVE}/${section.name}/Megascale » déplacé vers « ${MGS_ADMIN}/${section.name} »`);
+          await log("drive-split", "legal_entity", mgs.id, `« ${ADMIN_DRIVE}/${section.name}/Megascale » déplacé vers « ${MGS_DRIVE}/Administratif/${section.name} »`);
         }
       } else if (/^freelance$/i.test(sub.name)) {
         const files = await drive.list(ADMIN, `'${sub.id}' in parents and trashed=false`, { driveId: otpAdmin });
@@ -439,7 +489,7 @@ async function splitDrives(wss: Ws[]) {
             continue;
           }
           if (budget.n <= 0) return;
-          const adm = await findOrCreateFolder(subject, ws.drive.folderId, "Administratif");
+          const adm = { id: (await roots(ws, subject)).admin! };
           const target = await findOrCreateFolder(subject, adm.id, section.name);
           if (f.mimeType === FOLDER) {
             const t2 = await findOrCreateFolder(subject, target.id, f.name);
@@ -450,7 +500,7 @@ async function splitDrives(wss: Ws[]) {
             budget.n--;
           }
         }
-        if (!left && files.length) await drive.update(ADMIN, sub.id, { trashed: true }).catch(() => {});
+        if (!left) await drive.update(ADMIN, sub.id, { trashed: true }).catch(() => {}); // empty « Freelance » folders too
       }
     }
   }

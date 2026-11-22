@@ -1,3 +1,4 @@
+import { TabBar } from "@/components/ui/tab-bar";
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -173,7 +174,7 @@ function RecLink({ table, id, className, children, title }: { table: string; id:
   );
 }
 
-type Tab = "overview" | "comms" | "money" | "work" | "people" | "files" | "uploads" | "portal";
+type Tab = "overview" | "ai" | "comms" | "money" | "work" | "people" | "files" | "uploads" | "portal";
 
 export function ClientView({ data, id, mode }: { data: Overview; id: string; mode: "admin" | "portal" }) {
   const { tr, locale } = useI18n();
@@ -188,6 +189,7 @@ export function ClientView({ data, id, mode }: { data: Overview; id: string; mod
   const toSort = (data.uploads ?? []).filter((u) => u.status === "to_sort").length;
   const tabs: [Tab, string, number | null][] = [
     ["overview", tr({ fr: "Aperçu", en: "Overview" }), null],
+    ...(!portal ? ([["ai", tr({ fr: "Résumé IA", en: "AI summary" }), null]] as [Tab, string, null][]) : []),
     ...(!portal ? ([["comms", tr({ fr: "Échanges", en: "Communications" }), data.communications.length]] as [Tab, string, number][]) : []),
     ["money", tr({ fr: "Finance", en: "Finance" }), data.invoices.length + data.quotes.length],
     ["work", tr({ fr: "Projets & tâches", en: "Projects & tasks" }), data.projects.length + data.tasks.length],
@@ -246,20 +248,7 @@ export function ClientView({ data, id, mode }: { data: Overview; id: string; mod
         </div>
 
         {/* Tabs */}
-        <div className="no-scrollbar -mx-1 mt-1 flex gap-1 overflow-x-auto border-b border-border">
-          {tabs.map(([k, label, n]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setTab(k)}
-              className={cn("-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2.5 text-[13px] font-medium", tab === k ? "border-fg text-fg" : "border-transparent text-muted hover:text-fg")}
-            >
-              {k === "uploads" && <Upload className="size-3.5" />}
-              {label}
-              {n ? <span className={cn("rounded-full px-1.5 text-[11px] tabular-nums", k === "uploads" ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" : "bg-surface-2 text-muted")}>{n}</span> : null}
-            </button>
-          ))}
-        </div>
+        <TabBar className="mt-5" items={tabs.map(([k, label, n]) => ({ key: k, label, count: n, active: tab === k, onClick: () => setTab(k), highlight: k === "uploads", icon: k === "uploads" ? <Upload className="size-3.5" /> : k === "ai" ? <Sparkles className="size-3.5 text-violet-500" /> : undefined }))} />
 
         <div className="pt-6">
           {tab === "overview" && (
@@ -267,13 +256,6 @@ export function ClientView({ data, id, mode }: { data: Overview; id: string; mod
               <div className="min-w-0 space-y-8">
                 {!portal ? (
                   <>
-                    <div className="border-l-2 border-violet-400/70 pl-4">
-                      <div className="mb-1.5 flex items-center gap-2 text-[12px] font-medium uppercase tracking-wider text-subtle">
-                        <Sparkles className="size-3.5 text-violet-500" /> {tr({ fr: "Point de situation", en: "Status" })}
-                        {org.aiSummaryAt && <span className="normal-case tracking-normal">· {fmtRelative(org.aiSummaryAt, locale)}</span>}
-                      </div>
-                      {org.aiSummary ? <Md text={String(org.aiSummary)} /> : <div className="text-[13px] text-subtle">{tr({ fr: "Résumé généré à la prochaine synchronisation.", en: "Summary generated at next sync." })}</div>}
-                    </div>
                     <Block title={tr({ fr: "Derniers échanges", en: "Latest exchanges" })} more={data.communications.length > 5 ? () => setTab("comms") : undefined}>
                       {data.communications.slice(0, 5).map((c) => (
                         <CommRow key={c.id} c={c} />
@@ -327,6 +309,16 @@ export function ClientView({ data, id, mode }: { data: Overview; id: string; mod
                   </div>
                 </Block>
               </div>
+            </div>
+          )}
+
+          {tab === "ai" && !portal && (
+            <div className="max-w-3xl border-l-2 border-violet-400/70 pl-4">
+              <div className="mb-1.5 flex items-center gap-2 text-[12px] font-medium uppercase tracking-wider text-subtle">
+                <Sparkles className="size-3.5 text-violet-500" /> {tr({ fr: "Point de situation", en: "Status" })}
+                {org.aiSummaryAt && <span className="normal-case tracking-normal">· {fmtRelative(org.aiSummaryAt, locale)}</span>}
+              </div>
+              {org.aiSummary ? <Md text={String(org.aiSummary)} /> : <div className="text-[13px] text-subtle">{tr({ fr: "Résumé généré à la prochaine synchronisation.", en: "Summary generated at next sync." })}</div>}
             </div>
           )}
 

@@ -13,6 +13,7 @@ import { CATEGORY_FOLDERS, clientSubfolder } from "../lib/client-drive";
 import { mailLayout, sendMail, esc } from "../lib/mail";
 import { storeUploads } from "./portal";
 import { env } from "../lib/env";
+import { fixIntegrity, integrity } from "../lib/integrity";
 
 export const workspace = new Hono<AppEnv>();
 const ADMIN = "contact@otopio.ca";
@@ -215,17 +216,33 @@ workspace.post("/uploads/:id/sort", async (c) => {
 
 /* ----------------------------- Drive explorer ----------------------------- */
 
-workspace.get("/drive/roots", async (c) => {
+/** Top-level folders shown in the explorer: the two shared drives (Otopio Inc.) or « Clients » / « Administratif » of the workspace root. */
+async function explorerRoots(ws: ReturnType<typeof wsOf>) {
+  const base = ws.drive?.root ?? ws.drive?.folderId;
+  if (base) {
+    const rows = await db
+      .select({ id: schema.document.driveFileId, name: schema.document.title })
+      .from(schema.document)
+      .where(and(eq(schema.document.workspaceId, ws.id), eq(schema.document.parentId, base), eq(schema.document.isFolder, true)));
+    const order = ["Clients", "Administratif"];
+    return rows
+      .filter((r) => r.id && !r.name.startsWith("_"))
+      .map((r) => ({ id: r.id!, name: r.name }))
+      .sort((a, b) => (order.indexOf(a.name) + 1 || 9) - (order.indexOf(b.name) + 1 || 9) || a.name.localeCompare(b.name));
+  }
+  const ids = [ws.drive?.clients, ws.drive?.admin].filter(Boolean) as string[];
   const rows = await db
     .select({ driveId: schema.document.driveId, path: schema.document.path })
     .from(schema.document)
-    .where(and(sql`${schema.document.driveId} is not null`, eq(schema.document.workspaceId, wsOf(c).id)))
+    .where(and(sql`${schema.document.driveId} is not null`, eq(schema.document.workspaceId, ws.id), ...(ids.length ? [inArray(schema.document.driveId, ids)] : [])))
     .groupBy(schema.document.driveId, schema.document.path)
     .limit(5000);
   const roots = new Map<string, string>();
   for (const r of rows) if (r.driveId && r.path && !roots.has(r.driveId)) roots.set(r.driveId, r.path.split("/")[0]!);
-  return c.json([...roots.entries()].map(([id, name]) => ({ id, name })));
-});
+  return [...roots.entries()].map(([id, name]) => ({ id, name }));
+}
+
+workspace.get("/drive/roots", async (c) => c.json(await explorerRoots(wsOf(c))));
 
 workspace.get("/drive/children", async (c) => {
   const parent = c.req.query("parent");
@@ -238,7 +255,9 @@ workspace.get("/drive/children", async (c) => {
 workspace.get("/drive/ancestors", async (c) => {
   let id = c.req.query("id") ?? "";
   const chain: { id: string; name: string; path: string | null }[] = [];
+  const base = wsOf(c).drive?.root ?? wsOf(c).drive?.folderId;
   for (let i = 0; i < 30 && id; i++) {
+    if (base && id === base) break; // « Clients » / « Administratif » are the top of the breadcrumb
     const [d] = await db.select().from(schema.document).where(and(eq(schema.document.driveFileId, id), eq(schema.document.workspaceId, wsOf(c).id)));
     if (!d) {
       // shared drive root (not indexed as a document)
@@ -381,6 +400,14 @@ workspace.delete("/drive/file/:id", async (c) => {
   if (d.isFolder && d.path) await db.delete(schema.document).where(like(schema.document.path, `${d.path.replace(/[%_]/g, "\\$&")}/%`));
   await db.delete(schema.document).where(eq(schema.document.id, d.id));
   return c.json({ ok: true });
+});
+
+/* ------------------------------- Integrity ------------------------------- */
+
+workspace.get("/integrity", async (c) => c.json(await integrity(wsOf(c))));
+workspace.post("/integrity/fix", async (c) => {
+  if (wsOf(c).role !== "admin") return c.json({ error: "Réservé aux administrateurs" }, 403);
+  return c.json(await fixIntegrity(wsOf(c)));
 });
 
 /* ------------------------------ AI + journal ------------------------------ */

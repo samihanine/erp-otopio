@@ -166,7 +166,7 @@ export async function storeUploads(orgId: string, form: FormData, uploadedBy: st
         kind: "document",
         type: cat === "invoice" ? "invoice" : cat === "quote" ? "quote" : cat === "legal" ? "contract" : "free",
         driveFileId: up.id,
-        driveId: up.driveId ?? null,
+        driveId: w.drive?.root ?? w.drive?.folderId ?? up.driveId ?? null,
         parentId: folderId,
         path: null,
         mimeType: up.mimeType,

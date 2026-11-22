@@ -10,6 +10,7 @@ import { useState } from "react";
 import { AiUsage, AutomationJournal, PersonalGoogle } from "./automation";
 import { usePrefValue } from "@/lib/use-media";
 import { WorkspaceSettings } from "./workspace-settings";
+import { IntegrityPanel } from "./integrity";
 
 type Status = {
   google: { connected: boolean; scope: string };
@@ -118,6 +119,7 @@ export function SettingsPage() {
           </section>
           )}
 
+          {tab === "system" && <IntegrityPanel />}
           {tab === "system" && (
           <section className="mt-10">
             <h2 className="mb-3 text-lg font-semibold">{tr({ fr: "Système", en: "System" })}</h2>

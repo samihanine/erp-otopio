@@ -1,3 +1,4 @@
+import { TabBar } from "@/components/ui/tab-bar";
 import { useWorkspaces } from "@/lib/workspace";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -113,13 +114,9 @@ export function WebsitePage() {
           )}
 
           {/* Domain tabs */}
-          <div className="no-scrollbar mt-6 flex gap-1 overflow-x-auto border-b border-border">
-            {["all", ...(data?.zones ?? [])].map((z) => (
-              <button key={z} type="button" onClick={() => setZone(z)} className={cn("-mb-px shrink-0 border-b-2 px-3 py-2 text-[13px] font-medium", zone === z ? "border-fg text-fg" : "border-transparent text-muted hover:text-fg")}>
-                {z === "all" ? tr({ fr: "Global", en: "All domains" }) : z}
-              </button>
-            ))}
-            {isFetching && <RefreshCw className="my-auto ml-2 size-3.5 animate-spin text-subtle" />}
+          <div className="mt-6 flex items-center gap-2">
+            <TabBar items={["all", ...(data?.zones ?? [])].map((z) => ({ key: z, label: z === "all" ? tr({ fr: "Global", en: "All domains" }) : z, active: zone === z, onClick: () => setZone(z) }))} />
+            {isFetching && <RefreshCw className="size-3.5 animate-spin text-subtle" />}
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

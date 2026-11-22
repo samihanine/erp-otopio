@@ -1,3 +1,4 @@
+import { TabBar } from "@/components/ui/tab-bar";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as Dl from "@radix-ui/react-dialog";
@@ -43,9 +44,9 @@ export function WorkspaceSwitcher({ compact = true }: { compact?: boolean }) {
           {ws.code === "OTP" ? <OtopioLogo className="size-6" /> : initials(ws)}
         </span>
         {compact ? (
-          <span className="flex max-w-[76px] items-center gap-0.5 text-[10.5px] font-medium leading-tight text-muted group-hover:text-fg">
-            <span className="truncate">{ws.name}</span>
-            <ChevronsUpDown className="size-3 shrink-0" />
+          <span className="flex w-[76px] flex-col items-center text-center text-[10.5px] font-medium leading-[1.15] text-muted group-hover:text-fg">
+            <span className="line-clamp-2 break-words">{ws.name}</span>
+            <ChevronsUpDown className="mt-0.5 size-3 shrink-0 text-subtle" />
           </span>
         ) : (
           <>
@@ -337,21 +338,7 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
             ) : null}
             <span className={cn("truncate font-medium", tabs?.length && "max-sm:hidden")}>{title ?? (section ? t(section.key === "db" ? "database" : section.label) : "")}</span>
           </div>
-          {tabs?.length ? (
-            <nav className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto sm:ml-2">
-              {tabs.map((tb) =>
-                tb.to ? (
-                  <Link key={tb.key} to={tb.to} search={{}} className={cn("shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-[13px] font-medium text-muted transition hover:bg-hover hover:text-fg", tb.active && "bg-fg/[.07] text-fg dark:bg-white/10")}>
-                    {tb.label}
-                  </Link>
-                ) : (
-                  <button key={tb.key} type="button" onClick={tb.onClick} className={cn("shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-[13px] font-medium text-muted transition hover:bg-hover hover:text-fg", tb.active && "bg-fg/[.07] text-fg dark:bg-white/10")}>
-                    {tb.label}
-                  </button>
-                ),
-              )}
-            </nav>
-          ) : null}
+          {tabs?.length ? <TabBar className="sm:ml-2" size="sm" items={tabs} /> : null}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {md ? actions : null}
             <button

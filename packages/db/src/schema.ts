@@ -197,7 +197,13 @@ export const legalEntity = pgTable("legal_entity", {
   ...timestamps,
 });
 
-export type WorkspaceDrive = { clients?: string; admin?: string; personalEmail?: string; folderId?: string };
+/**
+ * Drive storage of a workspace:
+ *  - Otopio Inc.: two shared drives (clients, admin)
+ *  - Megascale: one shared drive (root) holding « Clients » and « Administratif » folders
+ *  - freelances: an « ERP » folder (folderId) of the personal Drive (personalEmail) holding the same two folders
+ */
+export type WorkspaceDrive = { clients?: string; admin?: string; root?: string; personalEmail?: string; folderId?: string; clientsFolder?: string; adminFolder?: string; legacy?: string[] };
 
 /** Who can open a workspace. `email` may be a domain wildcard ("*@otopio.ca"). */
 export const workspaceMember = pgTable(

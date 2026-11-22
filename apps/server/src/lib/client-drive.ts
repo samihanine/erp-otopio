@@ -22,8 +22,10 @@ export async function findOrCreateFolder(subject: string, parent: string, name: 
 
 /** Root folder holding the client folders of a workspace. */
 export async function clientsRoot(ws: Ws, subject: string) {
+  if (ws.drive?.clientsFolder) return ws.drive.clientsFolder;
+  const base = ws.drive?.root ?? ws.drive?.folderId;
+  if (base) return (await findOrCreateFolder(subject, base, "Clients")).id;
   if (ws.drive?.clients) return ws.drive.clients;
-  if (ws.drive?.folderId) return (await findOrCreateFolder(subject, ws.drive.folderId, "Clients")).id;
   if (ws.code === "OTP") {
     const d = (await drive.sharedDrives(subject, true)).find((x) => x.name === "Clients");
     if (d) return d.id;

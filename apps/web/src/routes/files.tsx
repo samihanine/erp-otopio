@@ -1,3 +1,4 @@
+import { TabBar } from "@/components/ui/tab-bar";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,15 +27,13 @@ const DRAG_TYPE = "application/x-erp-drive";
 export function DocsTabs({ active }: { active: "files" | "models" }) {
   const { tr } = useI18n();
   return (
-    <div className="flex gap-1 border-b border-border px-4 md:px-6">
-      {[
-        { k: "files", to: "/documents", label: tr({ fr: "Fichiers", en: "Files" }) },
-        { k: "models", to: "/documents/models", label: tr({ fr: "Devis, factures & modèles", en: "Quotes, invoices & templates" }) },
-      ].map((t) => (
-        <Link key={t.k} to={t.to} className={cn("-mb-px border-b-2 px-2 py-2.5 text-[13px] font-medium", active === t.k ? "border-fg text-fg" : "border-transparent text-muted hover:text-fg")}>
-          {t.label}
-        </Link>
-      ))}
+    <div className="border-b border-border px-4 py-2 md:px-6">
+      <TabBar
+        items={[
+          { key: "files", to: "/documents", label: tr({ fr: "Fichiers", en: "Files" }), active: active === "files" },
+          { key: "models", to: "/documents/models", label: tr({ fr: "Devis, factures & modèles", en: "Quotes, invoices & templates" }), active: active === "models" },
+        ]}
+      />
     </div>
   );
 }
@@ -448,7 +447,8 @@ function MoveDialog({ doc, roots, onClose, onMove }: { doc: Row | null; roots: F
   const { tr } = useI18n();
   const [target, setTarget] = useState<Folder | null>(null);
   useEffect(() => setTarget(null), [doc]);
-  const root = roots.find((r) => r.id === doc?.driveId);
+  // root of the document: same first path segment (Clients / Administratif), else same shared drive
+  const root = roots.find((r) => String(doc?.path ?? "").split("/")[0] === r.name) ?? roots.find((r) => r.id === doc?.driveId);
   return (
     <Dialog open={Boolean(doc)} onOpenChange={(o) => !o && onClose()}>
       <DialogContent title={`${tr({ fr: "Déplacer", en: "Move" })} « ${doc?.title ?? ""} »`} description={tr({ fr: "Choisissez le dossier de destination.", en: "Pick the destination folder." })}>
