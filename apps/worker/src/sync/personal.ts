@@ -84,6 +84,7 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
   const existing = (await g<{ labels: { id: string; name: string }[] }>("labels")).labels;
   const labelId = new Map(existing.map((l) => [l.name, l.id]));
   for (const n of labelNames) if (!labelId.has(n)) labelId.set(n, (await g<{ id: string }>("labels", { method: "POST", body: JSON.stringify({ name: n }) })).id);
+  const ours = new Set(labelNames.map((n) => labelId.get(n)!));
   const L = (n: string) => labelId.get(`${code === "MGS" ? "Megascale" : code}/${n}`)!;
 
   const stateKey = `pgmail:${email}:since`;
@@ -100,7 +101,7 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
   const bills = await db.select().from(schema.bill).where(eq(schema.bill.legalEntityId, entity.id));
   for (const { id } of list.messages ?? []) {
     const m = await g<Msg>(`messages/${id}?format=full`);
-    if (m.labelIds?.some((l) => [...labelId.values()].includes(l))) continue; // already sorted
+    if (m.labelIds?.some((l) => ours.has(l))) continue; // already sorted
     stats.seen++;
     const from = hdr(m, "From");
     const subject = hdr(m, "Subject");
