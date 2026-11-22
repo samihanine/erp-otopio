@@ -99,6 +99,17 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
   }
   const stats = { seen: 0, labelled: 0, billsAttached: 0, billsCreated: 0, aiErrors: 0 };
   const bills = await db.select().from(schema.bill).where(eq(schema.bill.legalEntityId, entity.id));
+  const invs = await db.select({ org: schema.invoice.organizationId }).from(schema.invoice).where(eq(schema.invoice.legalEntityId, entity.id));
+  const orgs = await db.select().from(schema.organization);
+  const clientIds = new Set(invs.map((i) => i.org));
+  const GENERIC = /^(gmail|hotmail|outlook|yahoo|icloud|live|free|orange|wanadoo|laposte)\./;
+  const clientDomains = new Set(
+    orgs
+      .filter((o) => clientIds.has(o.id))
+      .flatMap((o) => [(o.email ?? "").split("@")[1] ?? "", (o.website ?? "").replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] ?? ""])
+      .map((d) => d.toLowerCase())
+      .filter((d) => d && !GENERIC.test(d)),
+  );
   for (const { id } of list.messages ?? []) {
     const m = await g<Msg>(`messages/${id}?format=full`);
     if (m.labelIds?.some((l) => ours.has(l))) continue; // already sorted
@@ -106,11 +117,13 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     const from = hdr(m, "From");
     const subject = hdr(m, "Subject");
     const pdfs = flat(m.payload).filter((p) => p.body?.attachmentId && (/pdf/i.test(p.mimeType ?? "") || /\.pdf$/i.test(p.filename ?? "")));
+    const fromAddr = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();
+    const dom = fromAddr.split("@")[1] ?? "";
     let bucket = "Autres";
-    if (/qonto/i.test(from)) bucket = "Banque";
-    else if (pdfs.length && INVOICE.test(`${subject} ${m.snippet}`)) bucket = "Factures fournisseurs";
-    else if (/impots|urssaf|greffe|inpi|infogreffe|dgfip|expert|compta|assurance|bpi/i.test(from)) bucket = "Administratif";
-    else if (!/(no-?reply|newsletter|notifications?@|marketing|news@)/i.test(from) && !from.includes(email)) bucket = "Clients";
+    if (/qonto|banque|bank|stripe|paypal|wise\.com/i.test(from)) bucket = "Banque";
+    else if (/impots|finances\.gouv|dgfip|urssaf|greffe|inpi|infogreffe|insee|securite-sociale|ssi|net-entreprises|bpifrance|expert-?compt|assurance/i.test(`${from} ${dom}`)) bucket = "Administratif";
+    else if (clientDomains.has(dom)) bucket = "Clients";
+    else if (INVOICE.test(`${subject} ${m.snippet}`) || (pdfs.length && /facture|invoice|receipt|reçu/i.test(pdfs.map((p) => p.filename).join(" ")))) bucket = "Factures fournisseurs";
     await g(`messages/${id}/modify`, { method: "POST", body: JSON.stringify({ addLabelIds: [L(bucket)] }) });
     stats.labelled++;
     if (bucket !== "Factures fournisseurs" || !aiEnabled() || !pdfs.length) continue;
