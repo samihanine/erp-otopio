@@ -255,7 +255,8 @@ workspace.get("/alerts", async (c) => {
     db.select().from(schema.legalEntity),
   ]);
   const code = new Map(ents.map((e) => [e.id, e.code]));
-  const proBills = bills.filter((b) => b.status !== "cancelled" && b.scope === "pro" && b.paidBy === "entity" && Number(b.total) > 0);
+  const proBills = bills.filter((b) => b.status !== "cancelled" && b.scope === "pro" && (b.paidBy === "entity" || b.paidBy === "reimburse") && Number(b.total) > 0);
+  const toReimburse = bills.filter((b) => b.paidBy === "reimburse" && b.status !== "paid" && b.status !== "cancelled");
   const missing = proBills.filter((b) => !b.fileUrl);
   const uncategorised = proBills.filter((b) => b.category === "other");
   const invMissing = invoices.filter((i) => !["draft", "cancelled", "lost"].includes(i.status) && !i.fileUrl);
@@ -268,6 +269,7 @@ workspace.get("/alerts", async (c) => {
     billsUncategorised: { count: uncategorised.length, items: uncategorised.slice(0, 8).map(slim) },
     invoicesWithoutFile: { count: invMissing.length, items: invMissing.slice(0, 8).map((i) => ({ id: i.id, label: i.number, date: i.issueDate, amount: Number(i.total), currency: i.currency, entity: code.get(i.legalEntityId) ?? "" })) },
     bankUnmatched: { count: unmatchedTx.length, items: unmatchedTx.slice(0, 8).map((t) => ({ id: t.id, label: t.label, date: t.date, amount: Number(t.amount), currency: t.currency, entity: code.get(t.legalEntityId) ?? "" })) },
+    toReimburse: { count: toReimburse.length, total: Math.round(toReimburse.reduce((a, b) => a + Number(b.total), 0) * 100) / 100, items: toReimburse.slice(0, 8).map(slim) },
     linkedBills: billIds.size,
   });
 });

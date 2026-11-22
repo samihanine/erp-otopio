@@ -593,7 +593,7 @@ export const TABLES: Record<TableKey, TableDef> = {
         key: "paidBy",
         label: L("Payé par", "Paid by"),
         type: "select",
-        options: [o("entity", "Nous", "Us", "blue"), o("client", "Le client", "The client", "green"), o("other", "Autre", "Other", "gray")],
+        options: [o("entity", "Nous", "Us", "blue"), o("client", "Le client", "The client", "green"), o("reimburse", "Carte perso — à rembourser", "Personal card — to reimburse", "orange"), o("other", "Autre", "Other", "gray")],
         width: 120,
       },
       { key: "clientId", label: L("Client concerné", "Related client"), type: "relation", relation: "organization", width: 160 },

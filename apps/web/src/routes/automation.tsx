@@ -233,13 +233,14 @@ export function PersonalGoogle() {
 type AlertGroup = { count: number; items: { id: string; label: string; date: string | null; amount: number; currency: string; entity: string }[] };
 export function AlertsCard() {
   const { tr, locale } = useI18n();
-  const { data } = useQuery({ queryKey: ["ws", "alerts"], queryFn: () => api<{ total: number; billsWithoutReceipt: AlertGroup; billsUncategorised: AlertGroup; invoicesWithoutFile: AlertGroup; bankUnmatched: AlertGroup }>("/ws/alerts"), staleTime: 60_000 });
-  if (!data || !data.total) return null;
+  const { data } = useQuery({ queryKey: ["ws", "alerts"], queryFn: () => api<{ total: number; billsWithoutReceipt: AlertGroup; billsUncategorised: AlertGroup; invoicesWithoutFile: AlertGroup; bankUnmatched: AlertGroup; toReimburse: AlertGroup }>("/ws/alerts"), staleTime: 60_000 });
+  if (!data || !(data.total + data.toReimburse.count)) return null;
   const groups: { title: string; g: AlertGroup; table: string }[] = [
     { title: tr({ fr: "Dépenses sans justificatif", en: "Expenses without receipt" }), g: data.billsWithoutReceipt, table: "bill" },
     { title: tr({ fr: "Dépenses non catégorisées", en: "Uncategorised expenses" }), g: data.billsUncategorised, table: "bill" },
     { title: tr({ fr: "Factures sans fichier", en: "Invoices without file" }), g: data.invoicesWithoutFile, table: "invoice" },
     { title: tr({ fr: "Lignes bancaires non rapprochées", en: "Unmatched bank lines" }), g: data.bankUnmatched, table: "transaction" },
+    { title: tr({ fr: "Dépenses pro payées perso — à rembourser", en: "Pro expenses paid personally — to reimburse" }), g: data.toReimburse, table: "bill" },
   ].filter((x) => x.g.count > 0);
   return (
     <section className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
