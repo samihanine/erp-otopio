@@ -66,9 +66,17 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
   const token = await accessToken(refreshToken);
   if (!token) throw new Error("token refresh failed");
   const g = async <T>(path: string, init?: RequestInit) => {
-    const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init?.headers ?? {}) } });
-    if (!r.ok) throw new Error(`gmail ${r.status} ${path.slice(0, 40)}`);
-    return (await r.json()) as T;
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init?.body ? { "content-type": "application/json" } : {}), ...(init?.headers ?? {}) } });
+      if (r.ok) return (await r.json()) as T;
+      const body = await r.text();
+      // per-user rate limit → back off and retry
+      if ((r.status === 429 || (r.status === 403 && /rate|quota/i.test(body))) && attempt < 5) {
+        await new Promise((res) => setTimeout(res, 2000 * 2 ** attempt));
+        continue;
+      }
+      throw new Error(`gmail ${r.status} ${path.slice(0, 40)} ${body.slice(0, 160)}`);
+    }
   };
   const [entity] = await db.select().from(schema.legalEntity).where(eq(schema.legalEntity.code, code));
   if (!entity) return "unknown entity";
