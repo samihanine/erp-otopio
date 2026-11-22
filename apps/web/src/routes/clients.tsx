@@ -14,6 +14,7 @@ import { cn, faviconUrl, hostname } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, Icon, OptionBadge, Segmented, Skeleton, Spinner } from "@/components/ui/misc";
 import { Input, inputClass, Textarea } from "@/components/ui/input";
+import { useUrlTab } from "@/lib/use-media";
 import { Md } from "./automation";
 import { FileIcon, filePreviewUrl } from "./drive-ui";
 
@@ -179,7 +180,7 @@ type Tab = "overview" | "ai" | "comms" | "money" | "work" | "people" | "files" |
 export function ClientView({ data, id, mode }: { data: Overview; id: string; mode: "admin" | "portal" }) {
   const { tr, locale } = useI18n();
   const [commFilter, setCommFilter] = useState<"all" | "email" | "meeting">("all");
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useUrlTab<Tab>("overview", ["overview", "ai", "comms", "money", "work", "people", "files", "uploads", "portal"]);
   const money = (n: number) => formatMoney(n, data.currency ?? "CAD", locale);
   const comms = useMemo(() => (data.communications ?? []).filter((c) => commFilter === "all" || (commFilter === "email" ? c.type === "email" : c.type !== "email")), [data, commFilter]);
   const { org, kpis } = data;

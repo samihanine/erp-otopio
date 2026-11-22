@@ -7,7 +7,7 @@ import { ExternalLink, Eye, Globe, MousePointerClick, RefreshCw, Sparkles, Timer
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { CONTENT_STATUS_OPTIONS, TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
-import { usePrefValue } from "@/lib/use-media";
+import { usePrefValue, useUrlTab } from "@/lib/use-media";
 import { SocialView } from "./social";
 import { api } from "@/lib/api";
 import { fmtDate, fmtNumber, useI18n } from "@/lib/i18n";
@@ -35,7 +35,7 @@ const flag = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(.
 
 export function WebsitePage() {
   const { tr, t, locale } = useI18n();
-  const [tab0, setTab] = usePrefValue<"site" | "social">("marketing:tab", "site");
+  const [tab0, setTab] = useUrlTab<"site" | "social">("site", ["site", "social"]);
   const { enabled } = useWorkspaces();
   const tab = !enabled("social") ? "site" : !enabled("website") ? "social" : tab0;
   const [days, setDays] = useState<"7" | "30" | "90">("30");

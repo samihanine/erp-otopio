@@ -12,7 +12,6 @@ import { EmptyState, Icon, Skeleton, TableTile } from "@/components/ui/misc";
 import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparator, DropdownTrigger } from "@/components/ui/dropdown";
 import { Sheet } from "@/components/ui/dialog";
 import { useIsMobile } from "@/lib/use-media";
-import { ShellNavButtons, ShellSearchButton } from "@/components/layout/app-shell";
 import { FieldsMenu, FilterMenu, LayoutMenu, SortMenu } from "./toolbar";
 import { TableView } from "./table-view";
 import { CalendarView, GalleryView, KanbanView, ListView } from "./board-views";
@@ -124,7 +123,6 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
       <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 md:gap-3 md:px-5 md:pt-4">
-        <ShellNavButtons />
         <Dropdown>
           <DropdownTrigger className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 outline-none">
             <TableTile icon={def.icon} color={def.color} />
@@ -152,7 +150,6 @@ export function DatabaseView({ table, viewId, recordId, onSearchChange }: Props)
           {isFetching && !isLoading ? <span className="ml-2 inline-block size-1.5 animate-pulse rounded-full bg-accent align-middle" /> : null}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <ShellSearchButton />
           <Button variant="primary" size="md" onClick={() => onCreate()}>
             <Plus /> <span className="max-sm:hidden">{t("new")}</span>
           </Button>

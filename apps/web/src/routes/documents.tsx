@@ -6,7 +6,7 @@ import { ArrowLeft, Download, ExternalLink, FilePlus2, FileSignature, GripVertic
 import { toast } from "sonner";
 import { computeTotals, formatMoney, miniMarkdown, renderDocumentHtml, TABLES, type Line, type TaxRate } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
-import { DocsTabs } from "./files";
+import { docsTabs } from "./files";
 import { api, type Row } from "@/lib/api";
 import { fmtDate, useI18n } from "@/lib/i18n";
 import { recordLabel, useCreateRecord, useList, useRecord, useUpdateRecord } from "@/lib/data";
@@ -40,8 +40,7 @@ export function DocumentsPage() {
   };
 
   return (
-    <AppShell title={t("documents")}>
-      <DocsTabs active="models" />
+    <AppShell title={t("documents")} tabs={docsTabs(tr, "models")}>
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-6xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">

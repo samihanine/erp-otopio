@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Segmented, StatusDot } from "@/components/ui/misc";
 import { useState } from "react";
 import { AiUsage, AutomationJournal, PersonalGoogle } from "./automation";
-import { usePrefValue } from "@/lib/use-media";
+import { useUrlTab } from "@/lib/use-media";
 import { WorkspaceSettings } from "./workspace-settings";
 import { IntegrityPanel } from "./integrity";
 
@@ -27,7 +27,7 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const { data: status } = useQuery({ queryKey: ["integrations"], queryFn: () => api<Status>("/integrations/status") });
   const { data: health } = useQuery({ queryKey: ["health"], queryFn: () => api<{ ok: boolean; env: string; version: string; db: boolean; redis: boolean }>("/health") });
-  const [tab0, setTab] = usePrefValue<"workspace" | "entities" | "integrations" | "accounts" | "automation" | "ai" | "prefs" | "system">("settings:tab", "workspace");
+  const [tab0, setTab] = useUrlTab<"workspace" | "entities" | "integrations" | "accounts" | "automation" | "ai" | "prefs" | "system">("workspace", ["workspace", "entities", "integrations", "accounts", "automation", "ai", "prefs", "system"]);
   const tab = tab0 === "entities" ? "workspace" : tab0;
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
 

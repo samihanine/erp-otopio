@@ -1,4 +1,3 @@
-import { TabBar } from "@/components/ui/tab-bar";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,18 +23,12 @@ type Folder = { id: string; name: string; path?: string };
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const DRAG_TYPE = "application/x-erp-drive";
 
-export function DocsTabs({ active }: { active: "files" | "models" }) {
-  const { tr } = useI18n();
-  return (
-    <div className="border-b border-border px-4 py-2 md:px-6">
-      <TabBar
-        items={[
-          { key: "files", to: "/documents", label: tr({ fr: "Fichiers", en: "Files" }), active: active === "files" },
-          { key: "models", to: "/documents/models", label: tr({ fr: "Devis, factures & modèles", en: "Quotes, invoices & templates" }), active: active === "models" },
-        ]}
-      />
-    </div>
-  );
+/** Documents sub-tabs, shown in the page header like every other section. */
+export function docsTabs(tr: (x: { fr: string; en: string }) => string, active: "files" | "models") {
+  return [
+    { key: "files", to: "/documents", label: tr({ fr: "Fichiers", en: "Files" }), active: active === "files" },
+    { key: "models", to: "/documents/models", label: tr({ fr: "Devis, factures & modèles", en: "Quotes, invoices & templates" }), active: active === "models" },
+  ];
 }
 
 /* ----------------------------------- data ---------------------------------- */
@@ -107,6 +100,7 @@ export function FilesPage() {
   return (
     <AppShell
       title={tr({ fr: "Documents", en: "Documents" })}
+      tabs={docsTabs(tr, "files")}
       actions={
         <Button
           size="md"
@@ -122,7 +116,6 @@ export function FilesPage() {
       }
     >
       <div className="flex h-full min-h-0 flex-col">
-        <DocsTabs active="files" />
         <Explorer />
       </div>
     </AppShell>

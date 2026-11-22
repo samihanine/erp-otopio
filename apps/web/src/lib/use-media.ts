@@ -95,3 +95,26 @@ export function usePrefValue<T extends string>(key: string, initial: T) {
   };
   return [v, set] as const;
 }
+
+/** Current sub-tab kept in the URL (?tab=…) so a reload / shared link / workspace switch reopens it. */
+export function useUrlTab<T extends string>(def: T, allowed: readonly T[]) {
+  const read = () => {
+    const t = new URLSearchParams(location.search).get("tab") as T | null;
+    return t && allowed.includes(t) ? t : def;
+  };
+  const [tab, setTab] = useState<T>(read);
+  useEffect(() => {
+    const onPop = () => setTab(read());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const set = (t: T) => {
+    setTab(t);
+    const u = new URL(location.href);
+    if (t === def) u.searchParams.delete("tab");
+    else u.searchParams.set("tab", t);
+    history.replaceState(history.state, "", u);
+  };
+  return [tab, set] as const;
+}

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Segmented, Skeleton } from "@/components/ui/misc";
-import { usePrefValue } from "@/lib/use-media";
+import { usePrefValue, useUrlTab } from "@/lib/use-media";
 import { TaxesView } from "./taxes";
 import { AlertsCard } from "./automation";
 
@@ -52,7 +52,7 @@ export function FinancePage() {
   const [year, setYear] = useState<string>("all");
   const [months, setMonths] = useState<number[]>([]);
   const entity = "all";
-  const [view0, setView] = usePrefValue<"dashboard" | "taxes">("finance:view", "dashboard");
+  const [view0, setView] = useUrlTab<"dashboard" | "taxes">("dashboard", ["dashboard", "taxes"]);
   const { enabled, ws } = useWorkspaces();
   const view = !enabled("taxes") ? "dashboard" : !enabled("finance") ? "taxes" : view0;
   const [grain, setGrain] = usePrefValue<"month" | "year">("finance:grain", "month");

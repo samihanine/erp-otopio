@@ -171,9 +171,14 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
   const navigate = useNavigate();
   const [cmdOpen, setCmdOpen] = useState(false);
   const { dark, setDark } = useTheme();
-  const { enabled } = useWorkspaces();
+  const { enabled, ws } = useWorkspaces();
   const sections = SECTIONS.filter((s) => s.modules.some(enabled));
   const section = SECTIONS.find((s) => s.match(path));
+  // a section turned off in this workspace (direct link, old bookmark…) → home
+  const off = Boolean(ws && section && section.key !== "home" && !section.modules.some(enabled));
+  useEffect(() => {
+    if (off) navigate({ to: "/", replace: true });
+  }, [off, navigate]);
   const [sidebarOpen, setSidebarOpen] = usePref("erp.sidebar", true);
   const [menuOpen, setMenuOpen] = useState(false);
   const wide = useMedia("(min-width: 1024px)");
