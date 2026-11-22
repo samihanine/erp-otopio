@@ -37,7 +37,7 @@ export function WorkspaceSwitcher({ compact = true }: { compact?: boolean }) {
   return (
     <Dropdown>
       <DropdownTrigger
-        className={cn("outline-none focus-visible:ring-2 focus-visible:ring-accent", compact ? "group mb-3 flex flex-col items-center gap-1" : "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-hover")}
+        className={cn("outline-none focus-visible:ring-2 focus-visible:ring-accent", compact ? "group mb-3 flex flex-col items-center gap-1" : "flex w-full min-w-0 items-center gap-3 rounded-xl border border-border bg-surface px-2.5 py-2 text-left shadow-[0_1px_2px_rgb(0_0_0/.04)] transition hover:border-border-strong")}
         title={tr({ fr: "Changer d'espace de travail", en: "Switch workspace" })}
       >
         <span className="relative grid size-10 shrink-0 place-items-center rounded-xl text-[13px] font-bold text-white shadow-sm transition group-hover:opacity-90" style={{ background: ws.color }}>
@@ -51,8 +51,8 @@ export function WorkspaceSwitcher({ compact = true }: { compact?: boolean }) {
         ) : (
           <>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14px] font-semibold">{ws.name}</span>
-              <span className="block truncate text-[11px] text-muted">{tr({ fr: "Espace de travail", en: "Workspace" })}</span>
+              <span className="block truncate text-[14px] font-semibold leading-tight">{ws.name}</span>
+              <span className="block truncate text-[12px] text-muted">{ws.country === "FR" ? "France" : "Canada"} · {ws.currency}</span>
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted" />
           </>
@@ -205,7 +205,55 @@ export function AppShell({ children, title, actions, parent, sidebar, header = t
   return (
     <ShellContext.Provider value={ctx}>
     <div className="flex h-full bg-surface">
-      <aside className="hidden w-[84px] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2/50 px-2 py-4 md:flex">
+      {/* Main sidebar (desktop): app name, workspace card, navigation, account */}
+      <aside className="hidden w-[236px] shrink-0 flex-col border-r border-border bg-surface-2/50 px-3 pb-3 pt-4 xl:flex">
+        <Link to="/" className="mb-4 flex items-center gap-2.5 px-1.5">
+          <span className="grid size-9 place-items-center rounded-xl bg-navy text-sky-brand">
+            <OtopioLogo className="size-5" />
+          </span>
+          <span className="text-[19px] font-semibold tracking-tight">Otopio</span>
+        </Link>
+        <WorkspaceSwitcher compact={false} />
+        <nav className="mt-4 flex flex-col gap-0.5">
+          {[...sections, { key: "settings", to: "/settings", icon: Settings, label: "settings" as DictKey, match: (p: string) => p.startsWith("/settings"), modules: [] }].map((s) => {
+            const active = s.key === "settings" ? path.startsWith("/settings") : section?.key === s.key;
+            return (
+              <Link
+                key={s.key}
+                to={s.to}
+                className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-[14px] text-muted transition hover:bg-hover hover:text-fg", active && "bg-navy/[.08] font-medium text-fg dark:bg-white/10")}
+              >
+                <s.icon className="size-[18px] shrink-0" strokeWidth={active ? 2.1 : 1.8} />
+                {t(s.label)}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="mt-auto border-t border-border pt-3">
+          <div className="truncate px-3 pb-2 text-[12px] text-muted" title={user?.email}>
+            {user?.email}
+          </div>
+          <button type="button" onClick={() => setDark(!dark)} className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-[14px] text-muted hover:bg-hover hover:text-fg">
+            {dark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />} {dark ? tr({ fr: "Thème clair", en: "Light theme" }) : tr({ fr: "Thème sombre", en: "Dark theme" })}
+          </button>
+          <button type="button" onClick={() => setLocale(locale === "fr" ? "en" : "fr")} className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-[14px] text-muted hover:bg-hover hover:text-fg">
+            <Languages className="size-[18px]" /> {locale === "fr" ? "English" : "Français"}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              navigate({ to: "/login", search: {} });
+            }}
+            className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-[14px] text-muted hover:bg-hover hover:text-fg"
+          >
+            <LogOut className="size-[18px]" /> {t("signOut")}
+          </button>
+        </div>
+      </aside>
+
+      {/* Compact rail (tablets / small laptops) */}
+      <aside className="hidden w-[84px] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-2/50 px-2 py-4 md:flex xl:hidden">
         <WorkspaceSwitcher />
         {sections.map((s) => (
           <RailLink key={s.key} to={s.to} icon={s.icon} label={t(s.label)} active={section?.key === s.key} />
