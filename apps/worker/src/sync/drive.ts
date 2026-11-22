@@ -219,8 +219,10 @@ async function fullIndex(subject: string, ctx: Ctx, shared: boolean) {
 }
 
 export async function syncDrive() {
-  const wss = await ensureStorage();
-  await splitDrives(wss).catch((e) => console.warn("[drive] split", (e as Error).message));
+  // creating / moving Drive content only from production (staging shares the same Google Workspace)
+  const prod = (process.env.APP_ENV ?? "production") === "production";
+  const wss = prod ? await ensureStorage() : await workspaces();
+  if (prod) await splitDrives(wss).catch((e) => console.warn("[drive] split", (e as Error).message));
   const byCode = new Map(wss.map((w) => [w.code, w.id]));
   const stats: Record<string, number | string> = {};
   for (const ws of wss) {
