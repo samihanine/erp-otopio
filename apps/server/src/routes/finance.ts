@@ -194,7 +194,76 @@ finance.get("/summary", async (c) => {
     })
     .sort((a, b) => b.monthly - a.monthly);
 
+  // Chart series at month or year granularity over the selected period
+  const series = (len: 7 | 4) => {
+    const keys = [...new Set([...issued.map((i) => i.issueDate), ...bl.map((b) => b.issueDate), ...tx.filter((t) => t.side === "credit").map((t) => t.date)].filter((d) => inYear(d)).map((d) => d!.slice(0, len)))].sort();
+    return keys.map((k) => {
+      const inB = (d: string | null | undefined) => !!d && d.startsWith(k) && inYear(d);
+      return {
+        month: k,
+        revenue: sum(issued.filter((i) => inB(i.issueDate)).map((i) => conv(i.subtotal, i.currency))),
+        expenses: sum(bl.filter((b) => inB(b.issueDate)).map((b) => conv(b.total, b.currency))),
+        collected: round2(sum(tx.filter((t) => t.side === "credit" && inB(t.date)).map((t) => conv(t.amount, t.currency))) + sum(paidNoFeed.filter((i) => inB(paidOn(i))).map((i) => conv(i.amountPaid, i.currency)))),
+      };
+    });
+  };
+
+  // Unified ledger of the period: expenses (bills) + revenues (invoices), with justificatif status
+  const code = new Map(entities.map((e) => [e.id, e.code]));
+  const ledger = [
+    ...bl.map((b) => ({
+      id: b.id,
+      table: "bill" as const,
+      date: b.issueDate,
+      label: b.label,
+      party: orgName.get(b.organizationId ?? "") ?? null,
+      category: b.category,
+      entity: code.get(b.legalEntityId) ?? "",
+      side: "expense" as const,
+      amount: conv(b.total, b.currency),
+      original: b.total,
+      currency: b.currency,
+      hasFile: Boolean(b.fileUrl || b.driveFileId),
+      status: b.status,
+      reimburse: b.paidBy === "reimburse",
+    })),
+    ...issued.map((i) => ({
+      id: i.id,
+      table: "invoice" as const,
+      date: i.issueDate,
+      label: `${i.number}${i.title ? ` — ${i.title}` : ""}`,
+      party: orgName.get(i.organizationId ?? "") ?? null,
+      category: null,
+      entity: code.get(i.legalEntityId) ?? "",
+      side: "income" as const,
+      amount: conv(i.total, i.currency),
+      original: i.total,
+      currency: i.currency,
+      hasFile: Boolean(i.fileUrl),
+      status: i.status,
+      reimburse: false,
+    })),
+  ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  // Invoices waiting to be collected
+  const receivables = open
+    .map((i) => ({
+      id: i.id,
+      number: i.number,
+      client: orgName.get(i.organizationId ?? "") ?? null,
+      issueDate: i.issueDate,
+      dueDate: i.dueDate,
+      balance: round2(conv(i.total - i.amountPaid, i.currency)),
+      original: round2(i.total - i.amountPaid),
+      currency: i.currency,
+      overdue: i.status === "overdue" || Boolean(i.dueDate && i.dueDate < today()),
+    }))
+    .sort((a, b) => Number(b.overdue) - Number(a.overdue) || String(a.dueDate).localeCompare(String(b.dueDate)));
+
   return c.json({
+    series: { month: series(7), year: series(4) },
+    ledger,
+    receivables,
     year,
     months,
     years: allYears,

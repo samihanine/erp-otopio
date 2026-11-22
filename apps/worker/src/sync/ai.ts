@@ -23,7 +23,7 @@ export async function summarizeCommunications(limit = 25) {
       continue;
     }
     const text = t.messages.map((m) => `De: ${header(m, "From")} — ${header(m, "Date")}\n${textBody(m).slice(0, 3000)}`).join("\n---\n");
-    const r = await ai<{ summary: string; nextSteps: string }>(SYSTEM, `Résume ce fil de courriels en 2-3 phrases, puis liste les prochaines étapes (ou "" s'il n'y en a pas).\nJSON: {"summary": string, "nextSteps": string}\n\n${text}`, true).catch(() => null);
+    const r = await ai<{ summary: string; nextSteps: string }>(SYSTEM, `Résume ce fil de courriels en 2-3 phrases, puis liste les prochaines étapes (ou "" s'il n'y en a pas).\nJSON: {"summary": string, "nextSteps": string}\n\n${text}`, true, "résumé-courriels").catch(() => null);
     if (!r) continue;
     await db
       .update(schema.communication)
@@ -56,7 +56,7 @@ export async function summarizeClients() {
       `Tickets ouverts: ${tickets.filter((t) => !["resolved", "closed"].includes(t.status)).map((t) => t.title).join("; ")}`,
       `Derniers échanges:\n${comms.map((c) => `- ${c.occurredAt.toISOString().slice(0, 10)} ${c.type} « ${c.subject} » ${c.aiSummary ?? c.summary?.slice(0, 200) ?? ""}`).join("\n")}`,
     ].join("\n");
-    const summary = await ai<string>(SYSTEM, `Fais un point de situation sur ce client en 4 à 6 puces courtes : état des projets, argent (facturé / dû), derniers échanges, risques, prochaine action recommandée.\n\n${ctx}`).catch(() => null);
+    const summary = await ai<string>(SYSTEM, `Fais un point de situation sur ce client en 4 à 6 puces courtes : état des projets, argent (facturé / dû), derniers échanges, risques, prochaine action recommandée.\n\n${ctx}`, false, "résumé-clients").catch(() => null);
     if (!summary) continue;
     await db.update(schema.organization).set({ aiSummary: summary, aiSummaryAt: new Date() }).where(eq(schema.organization.id, o.id));
     n++;
@@ -86,6 +86,8 @@ export async function dashboardDigest() {
   const digest = await ai<string>(
     SYSTEM,
     `Rédige le point hebdomadaire de l'équipe en markdown très court (max 120 mots) avec 3 sections : **Cette semaine**, **À surveiller** (retards, impayés), **Agenda**.\n\n${ctx}`,
+    false,
+    "point-hebdo",
   ).catch(() => null);
   if (!digest) return false;
   await setState("dashboard:digest", JSON.stringify({ digest, at: new Date().toISOString() }));

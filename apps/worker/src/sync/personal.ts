@@ -133,6 +133,7 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
       `Tu analyses un courriel reçu par ${entity.name}. Détermine s'il s'agit d'une facture ou d'un reçu FOURNISSEUR (dépense). Catégories : software, hosting, ai, subcontracting, legal, accounting, marketing, office, travel, other.`,
       `Expéditeur: ${from}\nObjet: ${subject}\nPièces jointes: ${pdfs.map((p) => p.filename).join(", ")}\n\n${text(m).slice(0, 5000)}\n\nJSON: {"isSupplierInvoice":bool,"supplier":string,"number":string|null,"date":"YYYY-MM-DD"|null,"total":number|null,"tax":number|null,"currency":"CAD"|"EUR"|"USD","category":string}`,
       true,
+      "factures-boites-perso",
       );
     } catch (e) {
       // AI unavailable (quota…) → mail stays labelled, invoice will be retried by the alerts / next backfill

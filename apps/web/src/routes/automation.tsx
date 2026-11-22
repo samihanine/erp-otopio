@@ -266,3 +266,104 @@ export function AlertsCard() {
     </section>
   );
 }
+
+type AiUsageData = {
+  model: string;
+  enabled: boolean;
+  budget: number;
+  month: { cost: number; calls: number };
+  last30: { cost: number; calls: number };
+  byFeature: { feature: string; calls: number; cost: number; input: number; output: number; errors: number }[];
+  byDay: { day: string; cost: number }[];
+  errors: { at: string; feature: string; error: string | null }[];
+};
+const usd = (n: number) => `${n < 1 ? n.toFixed(4) : n.toFixed(2)} $`;
+export function AiUsage() {
+  const { tr, locale } = useI18n();
+  const { data } = useQuery({ queryKey: ["ws", "ai-usage"], queryFn: () => api<AiUsageData>("/ws/ai-usage"), refetchInterval: 60_000 });
+  if (!data) return null;
+  const pct = Math.min(100, (data.month.cost / data.budget) * 100);
+  const max = Math.max(...data.byDay.map((d) => d.cost), 0.0001);
+  return (
+    <section className="mt-8">
+      <div className="mb-1 flex items-center gap-2">
+        <Sparkles className="size-4 text-violet-500" />
+        <h2 className="text-lg font-semibold">{tr({ fr: "IA & coûts", en: "AI & costs" })}</h2>
+        <span className="ml-auto rounded-md bg-surface-2 px-2 py-0.5 font-mono text-[11.5px] text-muted">{data.model}</span>
+      </div>
+      <p className="mb-4 text-[13px] text-muted">
+        {data.enabled
+          ? tr({ fr: "Claude (Anthropic) : modèle économique, effort minimal, chaque appel est comptabilisé. Les appels sont bloqués au-delà du budget mensuel.", en: "Claude (Anthropic): cheap model, low effort, every call is metered. Calls stop beyond the monthly budget." })
+          : tr({ fr: "ANTHROPIC_API_KEY n'est pas configurée sur le serveur.", en: "ANTHROPIC_API_KEY is not configured." })}
+      </p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-border p-4">
+          <div className="text-xs text-muted">{tr({ fr: "Ce mois-ci", en: "This month" })}</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{usd(data.month.cost)}</div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
+            <div className={cn("h-full rounded-full", pct > 80 ? "bg-rose-500" : "bg-violet-500")} style={{ width: `${pct}%` }} />
+          </div>
+          <div className="mt-1 text-[11px] text-subtle">
+            {tr({ fr: "Budget", en: "Budget" })} {usd(data.budget)} · {pct.toFixed(0)} %
+          </div>
+        </div>
+        <div className="rounded-xl border border-border p-4">
+          <div className="text-xs text-muted">{tr({ fr: "Appels ce mois", en: "Calls this month" })}</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{data.month.calls.toLocaleString(locale)}</div>
+          <div className="mt-1 text-[11px] text-subtle">{data.month.calls ? usd(data.month.cost / data.month.calls) : "—"} / {tr({ fr: "appel", en: "call" })}</div>
+        </div>
+        <div className="rounded-xl border border-border p-4">
+          <div className="text-xs text-muted">{tr({ fr: "30 derniers jours", en: "Last 30 days" })}</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{usd(data.last30.cost)}</div>
+          <div className="mt-2 flex h-8 items-end gap-px">
+            {data.byDay.map((d) => (
+              <div key={d.day} title={`${d.day} · ${usd(d.cost)}`} className="flex-1 rounded-sm bg-violet-500/70" style={{ height: `${Math.max(4, (d.cost / max) * 100)}%` }} />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-xl border border-border">
+        <table className="w-full text-[13px]">
+          <thead className="bg-surface-2/60 text-left text-[11.5px] text-muted">
+            <tr>
+              <th className="px-4 py-2 font-medium">{tr({ fr: "Fonction", en: "Feature" })}</th>
+              <th className="px-4 py-2 text-right font-medium">{tr({ fr: "Appels", en: "Calls" })}</th>
+              <th className="px-4 py-2 text-right font-medium">Tokens in / out</th>
+              <th className="px-4 py-2 text-right font-medium">{tr({ fr: "Erreurs", en: "Errors" })}</th>
+              <th className="px-4 py-2 text-right font-medium">{tr({ fr: "Coût", en: "Cost" })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.byFeature.map((f) => (
+              <tr key={f.feature} className="border-t border-border">
+                <td className="px-4 py-2">{f.feature}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{f.calls}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-muted">
+                  {f.input.toLocaleString(locale)} / {f.output.toLocaleString(locale)}
+                </td>
+                <td className={cn("px-4 py-2 text-right tabular-nums", f.errors && "text-rose-500")}>{f.errors}</td>
+                <td className="px-4 py-2 text-right font-medium tabular-nums">{usd(f.cost)}</td>
+              </tr>
+            ))}
+            {!data.byFeature.length && (
+              <tr>
+                <td colSpan={5} className="p-6 text-center text-subtle">
+                  {tr({ fr: "Aucun appel ce mois-ci.", en: "No calls this month." })}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {data.errors.length > 0 && (
+        <div className="mt-3 space-y-1 text-[12px] text-subtle">
+          {data.errors.slice(0, 5).map((e, i) => (
+            <div key={i} className="truncate">
+              <span className="text-rose-500">●</span> {fmtRelative(e.at, locale)} · {e.feature} · {e.error}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

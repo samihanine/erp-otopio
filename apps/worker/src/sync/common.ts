@@ -54,26 +54,11 @@ export async function directory() {
   return { orgs, people, byEmail, byDomain, orgById, match };
 }
 
-/* ----------------------------- OpenAI (cheap) ----------------------------- */
-const OPENAI_KEY = () => process.env.OPENAI_API_KEY ?? process.env.OPENIA_API_KEY ?? "";
-export const aiEnabled = () => Boolean(OPENAI_KEY());
-export async function ai<T = string>(system: string, user: string, json = false): Promise<T> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { authorization: `Bearer ${OPENAI_KEY()}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-6-luna",
-      messages: [
-        { role: "system", content: system + (json ? "\nRéponds uniquement en JSON." : "") },
-        { role: "user", content: user.slice(0, 24_000) },
-      ],
-      ...(json ? { response_format: { type: "json_object" } } : {}),
-    }),
-  });
-  const j = (await res.json()) as { choices?: { message: { content: string } }[]; error?: { message: string } };
-  if (!j.choices) throw new Error(`OpenAI: ${j.error?.message}`);
-  const content = j.choices[0]!.message.content;
-  return (json ? JSON.parse(content) : content) as T;
+/* ------------------------- Claude (cheap, tracked) ------------------------- */
+import { ai as claude, aiEnabled } from "@erp/ai";
+export { aiEnabled };
+export function ai<T = string>(system: string, user: string, json = false, feature = "divers"): Promise<T> {
+  return claude<T>(feature, system, user, json);
 }
 
 export { sql };

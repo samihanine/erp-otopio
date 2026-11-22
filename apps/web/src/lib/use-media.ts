@@ -75,3 +75,23 @@ export function useResizableWidth(key: string, initial: number, min = 180, max =
   };
   return { width: w, onPointerDown, reset };
 }
+
+/** String preference persisted in localStorage (e.g. the selected tab). */
+export function usePrefValue<T extends string>(key: string, initial: T) {
+  const [v, setV] = useState<T>(() => {
+    try {
+      return (localStorage.getItem(key) as T | null) ?? initial;
+    } catch {
+      return initial;
+    }
+  });
+  const set = (x: T) => {
+    setV(x);
+    try {
+      localStorage.setItem(key, x);
+    } catch {
+      /* private mode */
+    }
+  };
+  return [v, set] as const;
+}

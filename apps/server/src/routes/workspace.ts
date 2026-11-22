@@ -274,6 +274,39 @@ workspace.get("/alerts", async (c) => {
   });
 });
 
+/** AI spend (Claude): month total vs budget, per feature, per day (30 d), recent errors. */
+workspace.get("/ai-usage", async (c) => {
+  const since = new Date(Date.now() - 30 * 864e5);
+  const rows = await db.select().from(schema.aiUsage).where(gte(schema.aiUsage.createdAt, since)).orderBy(desc(schema.aiUsage.createdAt));
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const month = rows.filter((r) => r.createdAt >= monthStart);
+  const sum = (rs: typeof rows) => rs.reduce((a, r) => a + Number(r.cost), 0);
+  const byFeature = new Map<string, { calls: number; cost: number; input: number; output: number; errors: number }>();
+  for (const r of month) {
+    const f = byFeature.get(r.feature) ?? { calls: 0, cost: 0, input: 0, output: 0, errors: 0 };
+    f.calls++;
+    f.cost += Number(r.cost);
+    f.input += r.inputTokens + r.cacheReadTokens + r.cacheWriteTokens;
+    f.output += r.outputTokens;
+    if (!r.ok) f.errors++;
+    byFeature.set(r.feature, f);
+  }
+  const byDay = new Map<string, number>();
+  for (const r of rows) byDay.set(r.createdAt.toISOString().slice(0, 10), (byDay.get(r.createdAt.toISOString().slice(0, 10)) ?? 0) + Number(r.cost));
+  return c.json({
+    model: process.env.AI_MODEL || "claude-haiku-5-5",
+    enabled: Boolean(process.env.ANTHROPIC_API_KEY),
+    budget: Number(process.env.AI_MONTHLY_BUDGET_USD || 10),
+    month: { cost: sum(month), calls: month.length },
+    last30: { cost: sum(rows), calls: rows.length },
+    byFeature: [...byFeature.entries()].map(([feature, v]) => ({ feature, ...v })).sort((a, b) => b.cost - a.cost),
+    byDay: [...byDay.entries()].map(([day, cost]) => ({ day, cost })).sort((a, b) => a.day.localeCompare(b.day)),
+    errors: rows.filter((r) => !r.ok).slice(0, 10).map((r) => ({ at: r.createdAt, feature: r.feature, error: r.error })),
+  });
+});
+
 workspace.get("/jobs", async (c) => {
   const jobs = await queue.getJobs(["active", "waiting", "delayed", "completed", "failed"], 0, 60);
   return c.json(

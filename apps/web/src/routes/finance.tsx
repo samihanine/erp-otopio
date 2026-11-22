@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CheckCircle2, CircleDollarSign, FileWarning, Landmark, Link2Off, Plug, Receipt, Wallet } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { ArrowDownRight, ArrowUpRight, Banknote, CheckCircle2, FileWarning, Landmark, Receipt, Wallet } from "lucide-react";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { formatMoney, TABLES } from "@erp/shared";
 import { AppShell } from "@/components/layout/app-shell";
@@ -11,7 +11,8 @@ import { HEX } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
-import { Segmented, Skeleton, StatusDot } from "@/components/ui/misc";
+import { Segmented, Skeleton } from "@/components/ui/misc";
+import { usePrefValue } from "@/lib/use-media";
 
 export type FinanceSummary = {
   year: number | "all";
@@ -36,7 +37,11 @@ export type FinanceSummary = {
   personal?: { total: number; count: number; byCategory: { category: string; amount: number }[] };
   subscriptions?: { id: string; label: string; scope: string; recurrence: string; amount: number; currency: string; monthly: number; lastCharge: string | null; card: string | null }[];
   subscriptionsMonthly?: number;
+  series?: Record<"month" | "year", { month: string; revenue: number; expenses: number; collected: number }[]>;
+  ledger?: LedgerRow[];
+  receivables?: { id: string; number: string; client: string | null; issueDate: string | null; dueDate: string | null; balance: number; original: number; currency: string; overdue: boolean }[];
 };
+type LedgerRow = { id: string; table: "bill" | "invoice"; date: string | null; label: string; party: string | null; category: string | null; entity: string; side: "expense" | "income"; amount: number; original: number; currency: string; hasFile: boolean; status: string; reimburse: boolean };
 
 export function FinancePage() {
   const { tr, t, locale } = useI18n();
@@ -44,6 +49,7 @@ export function FinancePage() {
   const [year, setYear] = useState<string>("all");
   const [months, setMonths] = useState<number[]>([]);
   const [entity, setEntity] = useState("all");
+  const [grain, setGrain] = usePrefValue<"month" | "year">("finance:grain", "month");
   const [currency, setCurrency] = useState<string>(() => {
     try {
       return localStorage.getItem("erp.finance.currency") ?? "CAD";
@@ -121,186 +127,148 @@ export function FinancePage() {
             </div>
           </div>
 
-          {/* KPIs */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {[
-              { label: tr({ fr: "Facturé HT", en: "Invoiced (net)" }), value: kpis?.invoicedHT, icon: CircleDollarSign, tint: "#2563eb" },
-              { label: t("collected"), value: kpis?.collected, icon: ArrowDownRight, tint: "#10b981" },
-              { label: t("outstanding"), value: kpis?.outstanding, icon: Receipt, tint: "#8b5cf6", sub: kpis ? `${kpis.openCount} ${tr({ fr: "factures", en: "invoices" })}` : "" },
-              { label: t("expenses"), value: kpis?.expenses, icon: ArrowUpRight, tint: "#ec4899" },
-              { label: t("margin"), value: kpis?.margin, icon: Landmark, tint: "#0a1430" },
-            ].map((k) => (
-              <div key={k.label} className="rounded-xl border border-border p-4">
-                <div className="flex items-center justify-between text-[13px] text-muted">
-                  {k.label}
-                </div>
-                <div className="mt-3 text-[22px] font-semibold tabular-nums tracking-tight">{isLoading ? <Skeleton className="h-7 w-24" /> : money(k.value ?? 0)}</div>
-                {k.sub ? <div className="mt-1 text-xs text-subtle">{k.sub}</div> : null}
-              </div>
-            ))}
-          </div>
-
-          {/* HT / VAT / TTC detail */}
-          <div className="mt-3 overflow-hidden rounded-xl border border-border">
-            <div className="grid grid-cols-[minmax(110px,1.2fr)_repeat(3,minmax(0,1fr))] border-b border-border bg-surface-2/50 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-subtle">
-              <span />
-              <span className="text-right">{tr({ fr: "Total HT", en: "Total excl. VAT" })}</span>
-              <span className="text-right">{tr({ fr: "TVA", en: "VAT" })}</span>
-              <span className="text-right">{tr({ fr: "Total TTC", en: "Total incl. VAT" })}</span>
-            </div>
+          {/* VAT cards */}
+          <div className="mt-6 grid gap-3 md:grid-cols-3">
             {(
               [
-                ["collected", tr({ fr: "Encaissé", en: "Collected" }), "text-emerald-700 dark:text-emerald-400", tr({ fr: "TVA collectée", en: "VAT collected" })],
-                ["expenses", tr({ fr: "Dépenses", en: "Expenses" }), "text-rose-700 dark:text-rose-400", tr({ fr: "TVA déductible", en: "Deductible VAT" })],
-                ["balance", tr({ fr: "Bilan", en: "Balance" }), "text-fg", tr({ fr: "TVA à reverser", en: "VAT payable" })],
+                ["collected", tr({ fr: "Encaissé", en: "Collected" }), tr({ fr: "TVA collectée", en: "VAT collected" }), ArrowDownRight, "#10b981"],
+                ["expenses", tr({ fr: "Dépenses", en: "Expenses" }), tr({ fr: "TVA déductible", en: "Deductible VAT" }), ArrowUpRight, "#ec4899"],
+                ["balance", tr({ fr: "Bilan", en: "Balance" }), tr({ fr: "TVA à reverser", en: "VAT payable" }), Landmark, "#6366f1"],
               ] as const
-            ).map(([k, label, tone, vatLabel], i) => (
-              <div key={k} className={cn("grid grid-cols-[minmax(110px,1.2fr)_repeat(3,minmax(0,1fr))] items-center px-4 py-3 text-[15px] tabular-nums", i < 2 && "border-b border-border", k === "balance" && "bg-surface-2/40 font-semibold")}>
-                <span className={cn("text-[13px] font-medium", tone)}>
-                  {label}
-                  <span className="block text-[11px] font-normal text-subtle">{vatLabel}</span>
-                </span>
-                {(["ht", "vat", "ttc"] as const).map((c) => (
-                  <span key={c} className="text-right">
-                    {isLoading || !data?.breakdown ? <Skeleton className="ml-auto h-5 w-20" /> : money(data.breakdown[k][c])}
-                  </span>
-                ))}
-              </div>
-            ))}
+            ).map(([k, label, vatLabel, Icon, tint]) => {
+              const b = data?.breakdown?.[k];
+              return (
+                <div key={k} className="relative overflow-hidden rounded-2xl border border-border bg-surface p-5">
+                  <div className="absolute inset-x-0 top-0 h-1" style={{ background: tint }} />
+                  <div className="flex items-center gap-2 text-[13px] font-medium text-muted">
+                    <span className="grid size-7 place-items-center rounded-lg" style={{ background: `${tint}1a`, color: tint }}>
+                      <Icon className="size-4" />
+                    </span>
+                    {label}
+                    <span className="ml-auto text-[11px] font-normal uppercase tracking-wider text-subtle">{tr({ fr: "HT", en: "Net" })}</span>
+                  </div>
+                  <div className={cn("mt-3 text-[26px] font-semibold tabular-nums tracking-tight", k === "balance" && b && b.ht < 0 && "text-rose-600")}>{isLoading || !b ? <Skeleton className="h-8 w-32" /> : money(b.ht)}</div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3 text-[12.5px]">
+                    <div>
+                      <div className="text-subtle">{vatLabel}</div>
+                      <div className="mt-0.5 font-medium tabular-nums">{b ? money(b.vat) : "…"}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-subtle">{tr({ fr: "Total TTC", en: "Total incl. VAT" })}</div>
+                      <div className="mt-0.5 font-medium tabular-nums">{b ? money(b.ttc) : "…"}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {kpis && kpis.overdue > 0 && (
-            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200">
-              <AlertTriangle className="size-4" />
-              <span>
-                <strong>{money(kpis.overdue)}</strong> {tr({ fr: "en retard de paiement", en: "overdue" })} —{" "}
-                {checks?.overdue.map((o) => `${o.number}${o.client ? ` (${o.client})` : ""}`).join(", ")}
-              </span>
-              <Link to="/db/$table" params={{ table: "invoice" }} className="ml-auto font-medium underline">
-                {tr({ fr: "Relancer", en: "Follow up" })}
-              </Link>
-            </div>
-          )}
-
-          {/* Reconciliation */}
-          <div className="mt-6 rounded-xl border border-border p-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[15px] font-semibold">{t("reconciliation")}</h3>
-              <span className={cn("rounded-md px-1.5 py-0.5 text-xs font-medium", issues ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700")}>{issues ? `${issues} ${tr({ fr: "à vérifier", en: "to review" })}` : "OK"}</span>
-            </div>
-            <p className="mt-1 text-xs text-muted">{tr({ fr: "Chaque recette doit être liée à une facture, chaque dépense à un justificatif.", en: "Every inflow needs an invoice, every expense a receipt." })}</p>
-            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-              <Check icon={Link2Off} label={tr({ fr: "Transactions non rapprochées", en: "Unmatched transactions" })} items={checks?.unmatchedTransactions.map((x) => ({ id: x.id, label: `${x.label} · ${formatMoney(x.amount, x.currency, locale)}` }))} table="transaction" />
-              <Check icon={FileWarning} label={tr({ fr: "Dépenses sans justificatif", en: "Bills without receipt" })} items={checks?.billsWithoutReceipt.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
-              <Check icon={CircleDollarSign} label={tr({ fr: "Dépenses sans montant", en: "Bills without amount" })} items={checks?.billsWithoutAmount.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
-              <Check icon={Receipt} label={tr({ fr: "Factures payées sans encaissement", en: "Paid invoices without payment" })} items={checks?.paidWithoutPayment.map((x) => ({ id: x.id, label: `${x.number}${x.client ? ` · ${x.client}` : ""}` }))} table="invoice" />
-              <Check icon={Wallet} label={tr({ fr: "Dépenses payées sans transaction", en: "Paid bills without transaction" })} items={checks?.paidBillsWithoutTransaction.map((x) => ({ id: x.id, label: x.label }))} table="bill" />
-            </div>
-          </div>
+          {/* Ledger */}
+          <Ledger rows={data?.ledger ?? []} money={money} cur={cur} />
 
           {/* Chart */}
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            <div className="rounded-xl border border-border p-5 lg:col-span-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[15px] font-semibold">{tr({ fr: "Revenus vs dépenses", en: "Revenue vs expenses" })}</div>
-                  <div className="text-xs text-muted">{tr({ fr: "Par mois d'émission · encaissements en ligne", en: "By issue month · collections as line" })}</div>
-                </div>
+          <div className="mt-6 rounded-2xl border border-border p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[15px] font-semibold">{tr({ fr: "Revenus vs dépenses", en: "Revenue vs expenses" })}</div>
+                <div className="text-xs text-muted">{tr({ fr: "Facturé HT, dépenses TTC · encaissements en ligne", en: "Invoiced net, expenses gross · collections as line" })}</div>
+              </div>
+              <div className="flex items-center gap-4">
                 <div className="flex gap-3 text-xs text-muted">
                   <span className="flex items-center gap-1.5"><span className="size-2 rounded-sm bg-[#2563eb]" />{t("revenue")}</span>
                   <span className="flex items-center gap-1.5"><span className="size-2 rounded-sm bg-[#ec4899]" />{t("expenses")}</span>
                   <span className="flex items-center gap-1.5"><span className="h-0.5 w-3 bg-[#10b981]" />{t("collected")}</span>
                 </div>
+                <Segmented value={grain} onChange={setGrain} options={[{ value: "month", label: tr({ fr: "Mois", en: "Month" }) }, { value: "year", label: tr({ fr: "Année", en: "Year" }) }]} />
               </div>
-              <div className="mt-4 h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={data?.monthly ?? []} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="var(--border)" />
-                    <XAxis dataKey="month" tickFormatter={monthLabel} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--subtle)" }} />
-                    <YAxis tickLine={false} axisLine={false} width={56} tick={{ fontSize: 11, fill: "var(--subtle)" }} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
-                    <RTooltip
-                      cursor={{ fill: "var(--hover)" }}
-                      formatter={(v) => money(Number(v))}
-                      labelFormatter={(m) => (String(m).length === 4 ? String(m) : fmtDate(`${String(m)}-01`, locale, { month: "long", year: "numeric" }))}
-                      contentStyle={{ borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", fontSize: 12 }}
-                    />
-                    <Bar dataKey="revenue" name={t("revenue")} fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={22} />
-                    <Bar dataKey="expenses" name={t("expenses")} fill="#ec4899" radius={[6, 6, 0, 0]} maxBarSize={22} />
-                    <Line type="monotone" dataKey="collected" name={t("collected")} stroke="#10b981" strokeWidth={2} dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+            </div>
+            <div className="mt-4 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data?.series?.[grain] ?? data?.monthly ?? []} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke="var(--border)" />
+                  <XAxis dataKey="month" tickFormatter={(m: string) => (m.length === 4 ? m : `${monthLabel(m)}${year === "all" ? ` ${m.slice(2, 4)}` : ""}`)} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--subtle)" }} />
+                  <YAxis tickLine={false} axisLine={false} width={56} tick={{ fontSize: 11, fill: "var(--subtle)" }} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
+                  <RTooltip
+                    cursor={{ fill: "var(--hover)" }}
+                    formatter={(v) => money(Number(v))}
+                    labelFormatter={(m) => (String(m).length === 4 ? String(m) : fmtDate(`${String(m)}-01`, locale, { month: "long", year: "numeric" }))}
+                    contentStyle={{ borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", fontSize: 12 }}
+                  />
+                  <Bar dataKey="revenue" name={t("revenue")} fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={22} />
+                  <Bar dataKey="expenses" name={t("expenses")} fill="#ec4899" radius={[6, 6, 0, 0]} maxBarSize={22} />
+                  <Line type="monotone" dataKey="collected" name={t("collected")} stroke="#10b981" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Donut + subscriptions */}
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="rounded-2xl border border-border p-5">
+              <div className="text-[15px] font-semibold">{tr({ fr: "Dépenses par catégorie", en: "Expenses by category" })}</div>
+              <div className="mt-2 grid items-center gap-4 sm:grid-cols-[200px_1fr]">
+                <div className="relative h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={data?.byCategory ?? []} dataKey="amount" nameKey="category" innerRadius={58} outerRadius={86} paddingAngle={2} stroke="none">
+                        {(data?.byCategory ?? []).map((c) => (
+                          <Cell key={c.category} fill={HEX[catField.options!.find((o) => o.value === c.category)?.color ?? "gray"]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                    <div>
+                      <div className="text-xs text-muted">{t("expenses")}</div>
+                      <div className="text-[15px] font-semibold tabular-nums">{money(kpis?.expenses ?? 0)}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {(data?.byCategory ?? []).map((c) => {
+                    const o = catField.options!.find((x) => x.value === c.category);
+                    const pct = kpis?.expenses ? (c.amount / kpis.expenses) * 100 : 0;
+                    return (
+                      <div key={c.category} className="flex items-center gap-2 text-[13px]">
+                        <span className="size-2 shrink-0 rounded-full" style={{ background: HEX[o?.color ?? "gray"] }} />
+                        <span className="flex-1 truncate text-muted">{o ? tr(o.label) : c.category}</span>
+                        <span className="w-10 text-right text-xs tabular-nums text-subtle">{pct.toFixed(0)} %</span>
+                        <span className="w-24 text-right tabular-nums">{money(c.amount)}</span>
+                      </div>
+                    );
+                  })}
+                  {!data?.byCategory.length && <div className="text-[13px] text-subtle">—</div>}
+                </div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-border p-5">
-              <div className="text-[15px] font-semibold">{tr({ fr: "Dépenses par catégorie", en: "Expenses by category" })}</div>
-              <div className="relative mt-2 h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={data?.byCategory ?? []} dataKey="amount" nameKey="category" innerRadius={52} outerRadius={78} paddingAngle={2} stroke="none">
-                      {(data?.byCategory ?? []).map((c) => (
-                        <Cell key={c.category} fill={HEX[catField.options!.find((o) => o.value === c.category)?.color ?? "gray"]} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
-                  <div>
-                    <div className="text-xs text-muted">{t("expenses")}</div>
-                    <div className="text-[15px] font-semibold tabular-nums">{money(kpis?.expenses ?? 0)}</div>
-                  </div>
-                </div>
+            <div className="rounded-2xl border border-border p-5">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-[15px] font-semibold">{tr({ fr: "Abonnements en cours", en: "Active subscriptions" })}</h3>
+                <span className="text-[13px] tabular-nums text-muted">
+                  ≈ {money(data?.subscriptionsMonthly ?? 0)} / {tr({ fr: "mois", en: "month" })}
+                </span>
               </div>
-              <div className="mt-2 space-y-1.5">
-                {(data?.byCategory ?? []).map((c) => {
-                  const o = catField.options!.find((x) => x.value === c.category);
-                  return (
-                    <div key={c.category} className="flex items-center gap-2 text-[13px]">
-                      <span className="size-2 rounded-full" style={{ background: HEX[o?.color ?? "gray"] }} />
-                      <span className="flex-1 truncate text-muted">{o ? tr(o.label) : c.category}</span>
-                      <span className="tabular-nums">{money(c.amount)}</span>
-                    </div>
-                  );
-                })}
+              <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto">
+                {(data?.subscriptions ?? []).map((s) => (
+                  <button key={s.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "bill", id: s.id } })} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
+                    <span className={cn("size-1.5 shrink-0 rounded-full", s.scope === "perso" ? "bg-pink-500" : "bg-blue-500")} />
+                    <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                    {s.card && <span className="hidden shrink-0 text-xs text-subtle sm:inline">{s.card}</span>}
+                    <span className="shrink-0 tabular-nums text-muted">
+                      {formatMoney(s.amount, s.currency, locale)}
+                      <span className="text-subtle">/{s.recurrence === "yearly" ? tr({ fr: "an", en: "yr" }) : s.recurrence === "quarterly" ? tr({ fr: "trim.", en: "qtr" }) : tr({ fr: "mois", en: "mo" })}</span>
+                    </span>
+                  </button>
+                ))}
+                {!data?.subscriptions?.length && <div className="text-[13px] text-subtle">—</div>}
               </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            {/* Entities */}
-            <div className="space-y-3">
-              <h3 className="text-[15px] font-semibold">{tr({ fr: "Structures de facturation", en: "Billing entities" })}</h3>
-              {data?.byEntity.map((e) => (
-                <div key={e.id} className="overflow-hidden rounded-xl border border-border">
-                  <div className="flex items-center gap-3 p-4">
-                    <span className="grid size-10 place-items-center rounded-xl text-sm font-bold text-white" style={{ background: e.color }}>
-                      {e.country}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14px] font-semibold">{e.name}</div>
-                      <div className="text-xs text-muted">
-                        {e.currency} · {e.invoices} {tr({ fr: "factures", en: "invoices" })}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[14px] font-semibold tabular-nums">{formatMoney(e.revenue, e.currency, locale)}</div>
-                      <div className="text-xs tabular-nums text-muted">− {formatMoney(e.expenses, e.currency, locale)}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 border-t border-border bg-surface-2/60 px-4 py-2.5 text-[13px]">
-                    <StatusDot ok={e.connected} />
-                    <span className="font-medium">{e.provider === "qonto" ? "Qonto" : e.provider === "quickbooks" ? "QuickBooks" : "—"}</span>
-                    <span className="text-muted">{e.connected ? t("connected") : t("notConnected")}</span>
-                    <Button size="xs" variant="secondary" className="ml-auto" disabled title={t("comingSoon")}>
-                      <Plug /> {t("connect")}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Top clients */}
-            <div className="rounded-xl border border-border p-5">
+          {/* Top clients + receivables */}
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="rounded-2xl border border-border p-5">
               <h3 className="text-[15px] font-semibold">{tr({ fr: "Meilleurs clients", en: "Top clients" })}</h3>
               <div className="mt-4 space-y-3">
                 {(data?.byClient ?? []).map((c, i) => {
@@ -321,32 +289,26 @@ export function FinancePage() {
               </div>
             </div>
 
-            {/* Active subscriptions */}
-            {data?.subscriptions?.length ? (
-              <div className="rounded-xl border border-border p-5">
-                <div className="flex items-baseline justify-between">
-                  <h3 className="text-[15px] font-semibold">{tr({ fr: "Abonnements en cours", en: "Active subscriptions" })}</h3>
-                  <span className="text-[13px] tabular-nums text-muted">
-                    ≈ {money(data.subscriptionsMonthly ?? 0)} / {tr({ fr: "mois", en: "month" })}
-                  </span>
-                </div>
-                <div className="mt-3 max-h-80 space-y-0.5 overflow-y-auto">
-                  {data.subscriptions.map((s) => (
-                    <button key={s.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "bill", id: s.id } })} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
-                      <span className={cn("size-1.5 shrink-0 rounded-full", s.scope === "perso" ? "bg-pink-500" : "bg-blue-500")} />
-                      <span className="min-w-0 flex-1 truncate">{s.label}</span>
-                      {s.card && <span className="hidden shrink-0 text-xs text-subtle sm:inline">{s.card}</span>}
-                      <span className="shrink-0 tabular-nums text-muted">
-                        {formatMoney(s.amount, s.currency, locale)}
-                        <span className="text-subtle">/{s.recurrence === "yearly" ? tr({ fr: "an", en: "yr" }) : s.recurrence === "quarterly" ? tr({ fr: "trim.", en: "qtr" }) : tr({ fr: "mois", en: "mo" })}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
+            <div className="rounded-2xl border border-border p-5">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-[15px] font-semibold">{tr({ fr: "Factures à encaisser", en: "Invoices to collect" })}</h3>
+                <span className="text-[13px] tabular-nums text-muted">{money(kpis?.outstanding ?? 0)}</span>
               </div>
-            ) : null}
-
-
+              <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto">
+                {(data?.receivables ?? []).map((r) => (
+                  <button key={r.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table: "invoice", id: r.id } })} className="flex w-full items-center gap-3 rounded-md px-1.5 py-1.5 text-left text-[13px] hover:bg-hover">
+                    <span className={cn("size-1.5 shrink-0 rounded-full", r.overdue ? "bg-rose-500" : "bg-amber-500")} />
+                    <span className="w-28 shrink-0 font-medium">{r.number}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted">{r.client ?? "—"}</span>
+                    <span className={cn("hidden shrink-0 text-xs sm:inline", r.overdue ? "text-rose-600" : "text-subtle")}>
+                      {r.dueDate ? `${r.overdue ? tr({ fr: "échue", en: "due" }) : tr({ fr: "éch.", en: "due" })} ${fmtDate(r.dueDate, locale, { day: "numeric", month: "short" })}` : ""}
+                    </span>
+                    <span className="w-24 shrink-0 text-right tabular-nums">{formatMoney(r.original, r.currency, locale)}</span>
+                  </button>
+                ))}
+                {!data?.receivables?.length && <div className="text-[13px] text-subtle">{tr({ fr: "Rien en attente.", en: "Nothing pending." })}</div>}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -354,27 +316,119 @@ export function FinancePage() {
   );
 }
 
-function Check({ icon: I, label, items, table }: { icon: typeof Receipt; label: string; items?: { id: string; label: string }[]; table: "bill" | "invoice" | "transaction" }) {
-  const [open, setOpen] = useState(false);
+function Ledger({ rows, money, cur }: { rows: LedgerRow[]; money: (n: number) => string; cur: string }) {
+  const { tr, locale } = useI18n();
   const navigate = useNavigate();
-  const n = items?.length ?? 0;
+  const [kind, setKind] = usePrefValue<"all" | "expense" | "income" | "missing">("finance:ledger", "all");
+  const [sort, setSort] = useState<string>("date");
+  const [month, setMonth] = useState<string>("all");
+  const [limit, setLimit] = useState(25);
+  const catField = TABLES.bill.fields.find((f) => f.key === "category")!;
+  const monthsAvail = [...new Set(rows.map((r) => r.date?.slice(0, 7)).filter(Boolean) as string[])].sort().reverse();
+  const missingCount = rows.filter((r) => !r.hasFile).length;
+  let list = rows.filter((r) => (kind === "all" ? true : kind === "missing" ? !r.hasFile : r.side === kind) && (month === "all" || r.date?.startsWith(month)));
+  list = [...list].sort((a, b) => (sort === "amount" ? b.amount - a.amount : sort === "missing" ? Number(a.hasFile) - Number(b.hasFile) || String(b.date).localeCompare(String(a.date)) : String(b.date).localeCompare(String(a.date))));
+  const total = list.reduce((a, r) => a + (r.side === "income" ? r.amount : -r.amount), 0);
   return (
-    <div className="rounded-xl border border-border">
-      <button type="button" onClick={() => n && setOpen(!open)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]">
-        {n ? <I className="size-4 text-amber-600" /> : <CheckCircle2 className="size-4 text-emerald-600" />}
-        <span className="flex-1">{label}</span>
-        <span className={cn("rounded-md px-1.5 text-xs tabular-nums", n ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "text-subtle")}>{n}</span>
-      </button>
-      {open && (
-        <div className="border-t border-border py-1">
-          {items!.map((x) => (
-            <button key={x.id} type="button" onClick={() => navigate({ to: "/db/$table/$id", params: { table, id: x.id } })} className="block w-full truncate px-3 py-1 text-left text-xs text-muted hover:bg-hover hover:text-fg">
-              {x.label}
-            </button>
-          ))}
+    <div className="mt-6 overflow-hidden rounded-2xl border border-border">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+        <h3 className="mr-2 text-[15px] font-semibold">{tr({ fr: "Transactions", en: "Transactions" })}</h3>
+        <Segmented
+          value={kind}
+          onChange={(v) => {
+            setKind(v);
+            setLimit(25);
+          }}
+          options={[
+            { value: "all", label: tr({ fr: "Tout", en: "All" }) },
+            { value: "expense", label: tr({ fr: "Dépenses", en: "Expenses" }) },
+            { value: "income", label: tr({ fr: "Recettes", en: "Income" }) },
+            { value: "missing", label: `${tr({ fr: "Justificatif manquant", en: "Missing receipt" })}${missingCount ? ` · ${missingCount}` : ""}` },
+          ]}
+        />
+        <div className="ml-auto flex items-center gap-2">
+          <Combobox size="md" className="w-40" value={month} onChange={(v) => setMonth(v ?? "all")} options={[{ value: "all", label: tr({ fr: "Tous les mois", en: "All months" }) }, ...monthsAvail.map((m) => ({ value: m, label: fmtDate(`${m}-01`, locale, { month: "long", year: "numeric" }) }))]} />
+          <Combobox
+            size="md"
+            className="w-44"
+            value={sort}
+            onChange={(v) => setSort(v ?? "date")}
+            options={[
+              { value: "date", label: tr({ fr: "Trier : date", en: "Sort: date" }) },
+              { value: "amount", label: tr({ fr: "Trier : montant", en: "Sort: amount" }) },
+              { value: "missing", label: tr({ fr: "Trier : manquants", en: "Sort: missing" }) },
+            ]}
+          />
         </div>
-      )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-[13px]">
+          <thead className="bg-surface-2/50 text-left text-[11px] uppercase tracking-wider text-subtle">
+            <tr>
+              <th className="px-4 py-2 font-medium">{tr({ fr: "Date", en: "Date" })}</th>
+              <th className="px-4 py-2 font-medium">{tr({ fr: "Libellé", en: "Label" })}</th>
+              <th className="px-4 py-2 font-medium">{tr({ fr: "Catégorie", en: "Category" })}</th>
+              <th className="px-4 py-2 font-medium">{tr({ fr: "Structure", en: "Entity" })}</th>
+              <th className="px-4 py-2 text-right font-medium">{tr({ fr: "Montant", en: "Amount" })}</th>
+              <th className="px-4 py-2 text-center font-medium">{tr({ fr: "Justificatif", en: "Receipt" })}</th>
+              <th className="px-4 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {list.slice(0, limit).map((r) => {
+              const o = r.category ? catField.options!.find((x) => x.value === r.category) : null;
+              return (
+                <tr key={`${r.table}:${r.id}`} className="border-t border-border hover:bg-hover/50">
+                  <td className="whitespace-nowrap px-4 py-2 tabular-nums text-muted">{r.date ? fmtDate(r.date, locale, { day: "numeric", month: "short", year: "2-digit" }) : "—"}</td>
+                  <td className="max-w-[320px] px-4 py-2">
+                    <div className="truncate font-medium">{r.label}</div>
+                    {r.party && <div className="truncate text-xs text-subtle">{r.party}</div>}
+                  </td>
+                  <td className="px-4 py-2">
+                    {r.side === "income" ? (
+                      <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11.5px] text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{tr({ fr: "Recette", en: "Income" })}</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-muted">
+                        <span className="size-2 rounded-full" style={{ background: HEX[o?.color ?? "gray"] }} />
+                        {o ? tr(o.label) : r.category}
+                        {r.reimburse && <span className="rounded bg-orange-50 px-1 text-[10.5px] text-orange-700 dark:bg-orange-950 dark:text-orange-300">{tr({ fr: "à rembourser", en: "reimburse" })}</span>}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-muted">{r.entity}</td>
+                  <td className={cn("whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums", r.side === "income" ? "text-emerald-700 dark:text-emerald-400" : "")}>
+                    {r.side === "income" ? "+" : "−"} {money(r.amount)}
+                    {r.currency !== cur && <div className="text-[11px] font-normal text-subtle">{formatMoney(r.original, r.currency, locale)}</div>}
+                  </td>
+                  <td className="px-4 py-2 text-center">{r.hasFile ? <CheckCircle2 className="mx-auto size-4 text-emerald-600" /> : <FileWarning className="mx-auto size-4 text-amber-500" />}</td>
+                  <td className="px-4 py-2 text-right">
+                    <Button size="xs" variant="secondary" onClick={() => navigate({ to: "/db/$table/$id", params: { table: r.table, id: r.id } })}>
+                      {tr({ fr: "Voir", en: "View" })}
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+            {!list.length && (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-subtle">
+                  {tr({ fr: "Aucune ligne pour ce filtre.", en: "No rows for this filter." })}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-3 border-t border-border bg-surface-2/40 px-4 py-2 text-[12.5px] text-muted">
+        <span>
+          {list.length} {tr({ fr: "lignes", en: "rows" })} · {tr({ fr: "solde", en: "net" })} <span className="font-medium tabular-nums text-fg">{money(total)}</span>
+        </span>
+        {list.length > limit && (
+          <Button size="xs" variant="ghost" className="ml-auto" onClick={() => setLimit(limit + 50)}>
+            {tr({ fr: "Afficher plus", en: "Show more" })}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
-

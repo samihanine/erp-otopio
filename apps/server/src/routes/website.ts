@@ -1,3 +1,4 @@
+import { ai, aiEnabled } from "@erp/ai";
 /**
  * Website CMS
  *  - `publicApi`: read-only, published content for otopio.ca (SSR), no session required.
@@ -89,26 +90,20 @@ websiteAdmin.post("/translate/:table/:id", async (c) => {
   const cols = columns(key);
   const [row] = (await db.select().from(TABLE_MAP[key]).where(eq(cols.id!, c.req.param("id")))) as Row[];
   if (!row) return c.json({ error: "Not found" }, 404);
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENIA_API_KEY;
-  if (!apiKey) return c.json({ error: "OPENAI_API_KEY manquante" }, 503);
+  if (!aiEnabled()) return c.json({ error: "ANTHROPIC_API_KEY manquante" }, 503);
   const source = Object.fromEntries(fields.map((f) => [f, row[f]]).filter(([, v]) => v != null && v !== ""));
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-6-luna",
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `You translate website content from French to ${target}. Keep the exact same json structure and keys, translate only human-readable string values (not URLs, icon names, layout types or colors). Keep markdown formatting. Natural, professional tone for an IT agency. Answer with json only.`,
-        },
-        { role: "user", content: JSON.stringify(source) },
-      ],
-    }),
-  });
-  if (!res.ok) return c.json({ error: `OpenAI ${res.status}` }, 502);
-  const out = JSON.parse(((await res.json()) as { choices: { message: { content: string } }[] }).choices[0]!.message.content) as Record<string, unknown>;
+  let out: Record<string, unknown>;
+  try {
+    out = await ai<Record<string, unknown>>(
+      "traduction-site",
+      `You translate website content from French to ${target}. Keep the exact same json structure and keys, translate only human-readable string values (not URLs, icon names, layout types or colors). Keep markdown formatting. Natural, professional tone for an IT agency.`,
+      JSON.stringify(source),
+      true,
+      8000,
+    );
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
   const translations = { ...(row.translations ?? {}), [target]: { ...((row.translations ?? {})[target] ?? {}), ...out } };
   const [updated] = await db.update(TABLE_MAP[key]).set({ translations, updatedAt: new Date() } as never).where(eq(cols.id!, row.id as string)).returning();
   return c.json({ row: updated });

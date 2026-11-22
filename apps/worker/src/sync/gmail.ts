@@ -119,6 +119,7 @@ async function detectInvoice(box: string, msgId: string, dir: Dir) {
     "Tu analyses un courriel reçu par Otopio (agence TI ; deux structures : OTP = Otopio Inc., Canada, CAD ; MGS = Megascale Technologie, France, EUR). Détermine s'il s'agit d'une facture ou d'un reçu FOURNISSEUR (une dépense pour Otopio). Catégories possibles : software, hosting, ai, subcontracting, legal, accounting, marketing, office, travel, other.",
     `Expéditeur: ${header(m, "From")}\nDestinataire: ${box}\nObjet: ${subject}\nPièces jointes: ${pdfs.map((p) => p.filename).join(", ")}\n\n${body}\n\nJSON attendu: {"isSupplierInvoice":bool,"supplier":string,"number":string|null,"date":"YYYY-MM-DD"|null,"total":number|null,"subtotal":number|null,"tax":number|null,"currency":"CAD"|"EUR"|"USD","paid":bool,"entity":"OTP"|"MGS","category":string}`,
     true,
+    "factures-gmail",
   );
   if (!x.isSupplierInvoice) return false;
   const [entity] = await db.select().from(schema.legalEntity).where(eq(schema.legalEntity.code, x.entity === "MGS" ? "MGS" : "OTP"));

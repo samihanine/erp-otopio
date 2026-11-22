@@ -8,7 +8,8 @@ import { useCreateRecord, useList } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { Segmented, StatusDot } from "@/components/ui/misc";
 import { useState } from "react";
-import { AutomationJournal, PersonalGoogle } from "./automation";
+import { AiUsage, AutomationJournal, PersonalGoogle } from "./automation";
+import { usePrefValue } from "@/lib/use-media";
 
 type Status = {
   google: { connected: boolean; scope: string };
@@ -27,6 +28,7 @@ export function SettingsPage() {
   const { data: status } = useQuery({ queryKey: ["integrations"], queryFn: () => api<Status>("/integrations/status") });
   const { data: health } = useQuery({ queryKey: ["health"], queryFn: () => api<{ ok: boolean; env: string; version: string; db: boolean; redis: boolean }>("/health") });
   const create = useCreateRecord("legal_entity");
+  const [tab, setTab] = usePrefValue<"entities" | "integrations" | "accounts" | "automation" | "ai" | "prefs" | "system">("settings:tab", "entities");
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
 
   const integrations = status
@@ -46,7 +48,22 @@ export function SettingsPage() {
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-4xl px-8 pb-16 pt-8">
           <h1 className="text-[28px] font-semibold tracking-tight">{t("settings")}</h1>
+          <Segmented
+            className="mt-5 flex-wrap"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "entities", label: tr({ fr: "Structures", en: "Entities" }) },
+              { value: "integrations", label: tr({ fr: "Intégrations", en: "Integrations" }) },
+              { value: "accounts", label: tr({ fr: "Comptes Google", en: "Google accounts" }) },
+              { value: "automation", label: tr({ fr: "Automatisations", en: "Automations" }) },
+              { value: "ai", label: tr({ fr: "IA & coûts", en: "AI & costs" }) },
+              { value: "prefs", label: tr({ fr: "Préférences", en: "Preferences" }) },
+              { value: "system", label: tr({ fr: "Système", en: "System" }) },
+            ]}
+          />
 
+          {tab === "entities" && (
           <section className="mt-8">
             <div className="mb-3 flex items-center justify-between">
               <div>
@@ -90,7 +107,9 @@ export function SettingsPage() {
               ))}
             </div>
           </section>
+          )}
 
+          {tab === "integrations" && (
           <section className="mt-10">
             <h2 className="text-lg font-semibold">{tr({ fr: "Intégrations", en: "Integrations" })}</h2>
             <p className="mb-3 text-[13px] text-muted">{tr({ fr: "Les clés se configurent dans les variables d'environnement Dokploy (prod & staging).", en: "Keys are set as Dokploy environment variables (prod & staging)." })}</p>
@@ -110,11 +129,14 @@ export function SettingsPage() {
               ))}
             </div>
           </section>
+          )}
 
-          <AutomationJournal />
+          {tab === "automation" && <AutomationJournal />}
 
-          <PersonalGoogle />
+          {tab === "accounts" && <PersonalGoogle />}
+          {tab === "ai" && <AiUsage />}
 
+          {tab === "prefs" && (
           <section className="mt-10">
             <h2 className="mb-3 text-lg font-semibold">{tr({ fr: "Préférences", en: "Preferences" })}</h2>
             <div className="space-y-3 rounded-xl border border-border p-4">
@@ -139,7 +161,9 @@ export function SettingsPage() {
               </div>
             </div>
           </section>
+          )}
 
+          {tab === "system" && (
           <section className="mt-10">
             <h2 className="mb-3 text-lg font-semibold">{tr({ fr: "Système", en: "System" })}</h2>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -157,6 +181,7 @@ export function SettingsPage() {
               ))}
             </div>
           </section>
+          )}
         </div>
       </div>
     </AppShell>
