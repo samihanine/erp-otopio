@@ -97,7 +97,7 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     list.messages.push(...(r.messages ?? []));
     if (!(page = r.nextPageToken)) break;
   }
-  const stats = { seen: 0, labelled: 0, billsAttached: 0, billsCreated: 0 };
+  const stats = { seen: 0, labelled: 0, billsAttached: 0, billsCreated: 0, aiErrors: 0 };
   const bills = await db.select().from(schema.bill).where(eq(schema.bill.legalEntityId, entity.id));
   for (const { id } of list.messages ?? []) {
     const m = await g<Msg>(`messages/${id}?format=full`);
@@ -114,11 +114,19 @@ async function syncAccount(email: string, sealed: string, code: string, full = f
     await g(`messages/${id}/modify`, { method: "POST", body: JSON.stringify({ addLabelIds: [L(bucket)] }) });
     stats.labelled++;
     if (bucket !== "Factures fournisseurs" || !aiEnabled() || !pdfs.length) continue;
-    const x = await ai<{ isSupplierInvoice: boolean; supplier: string; number: string | null; date: string | null; total: number | null; tax: number | null; currency: string; category: string }>(
+    let x: { isSupplierInvoice: boolean; supplier: string; number: string | null; date: string | null; total: number | null; tax: number | null; currency: string; category: string };
+    try {
+      x = await ai<{ isSupplierInvoice: boolean; supplier: string; number: string | null; date: string | null; total: number | null; tax: number | null; currency: string; category: string }>(
       `Tu analyses un courriel reçu par ${entity.name}. Détermine s'il s'agit d'une facture ou d'un reçu FOURNISSEUR (dépense). Catégories : software, hosting, ai, subcontracting, legal, accounting, marketing, office, travel, other.`,
       `Expéditeur: ${from}\nObjet: ${subject}\nPièces jointes: ${pdfs.map((p) => p.filename).join(", ")}\n\n${text(m).slice(0, 5000)}\n\nJSON: {"isSupplierInvoice":bool,"supplier":string,"number":string|null,"date":"YYYY-MM-DD"|null,"total":number|null,"tax":number|null,"currency":"CAD"|"EUR"|"USD","category":string}`,
       true,
-    );
+      );
+    } catch (e) {
+      // AI unavailable (quota…) → mail stays labelled, invoice will be retried by the alerts / next backfill
+      stats.aiErrors++;
+      await g(`messages/${id}/modify`, { method: "POST", body: JSON.stringify({ removeLabelIds: [L(bucket)] }) }); // retried next run
+      continue;
+    }
     if (!x.isSupplierInvoice) continue;
     const date = x.date ?? new Date(Number(m.internalDate)).toISOString().slice(0, 10);
     const same = (b: (typeof bills)[number]) => b.currency === (x.currency || b.currency) && x.total != null && Math.abs(Number(b.total) - x.total) < 0.02 && Math.abs(+new Date(b.issueDate ?? date) - +new Date(date)) < 7 * 864e5;
