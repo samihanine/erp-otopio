@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Segmented, Skeleton } from "@/components/ui/misc";
 import { usePrefValue } from "@/lib/use-media";
+import { TaxesView } from "./taxes";
 
 export type FinanceSummary = {
   year: number | "all";
@@ -49,6 +50,7 @@ export function FinancePage() {
   const [year, setYear] = useState<string>("all");
   const [months, setMonths] = useState<number[]>([]);
   const [entity, setEntity] = useState("all");
+  const [view, setView] = usePrefValue<"dashboard" | "taxes">("finance:view", "dashboard");
   const [grain, setGrain] = usePrefValue<"month" | "year">("finance:grain", "month");
   const [currency, setCurrency] = useState<string>(() => {
     try {
@@ -127,6 +129,19 @@ export function FinancePage() {
             </div>
           </div>
 
+          <Segmented
+            className="mt-5"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "dashboard", label: tr({ fr: "Tableau de bord", en: "Dashboard" }) },
+              { value: "taxes", label: tr({ fr: "Impôts & échéances", en: "Taxes & deadlines" }) },
+            ]}
+          />
+          {view === "taxes" ? (
+            <TaxesView />
+          ) : (
+            <>
           {/* VAT cards */}
           <div className="mt-6 grid gap-3 md:grid-cols-3">
             {(
@@ -310,6 +325,8 @@ export function FinancePage() {
               </div>
             </div>
           </div>
+            </>
+          )}
         </div>
       </div>
     </AppShell>

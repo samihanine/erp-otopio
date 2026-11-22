@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { db, schema } from "@erp/db";
 import { FX_TO_CAD, round2, toCAD } from "@erp/shared";
 import type { AppEnv } from "../lib/types";
+import { eq as eqOp } from "drizzle-orm";
+import { computeMGS, computeOTP, DEFAULTS, fiscalYear, type TaxConfig } from "../lib/taxes";
 import { env } from "../lib/env";
 
 export const finance = new Hono<AppEnv>();
@@ -281,4 +283,81 @@ finance.get("/summary", async (c) => {
     subscriptions,
     subscriptionsMonthly: sum(subscriptions.map((s) => s.monthly)),
   });
+});
+
+/* ------------------------------ Taxes (OTP + MGS) ------------------------------ */
+
+async function taxConfig(code: string): Promise<TaxConfig> {
+  const [row] = await db.select().from(schema.syncState).where(eqOp(schema.syncState.key, `tax:config:${code}`));
+  return { ...DEFAULTS[code], ...(row ? JSON.parse(row.value) : {}) };
+}
+async function saveTaxConfig(code: string, cfg: TaxConfig) {
+  const value = JSON.stringify(cfg);
+  await db.insert(schema.syncState).values({ key: `tax:config:${code}`, value }).onConflictDoUpdate({ target: schema.syncState.key, set: { value, updatedAt: new Date() } });
+}
+
+finance.get("/taxes", async (c) => {
+  const year = Number(c.req.query("year") ?? new Date().getFullYear());
+  const [entities, invoices, bills] = await Promise.all([db.select().from(schema.legalEntity), db.select().from(schema.invoice), db.select().from(schema.bill)]);
+  const fx = await fxRates();
+  const out = [];
+  for (const code of ["OTP", "MGS"] as const) {
+    const e = entities.find((x) => x.code === code);
+    if (!e) continue;
+    const cfg = await taxConfig(code);
+    const fy = fiscalYear(code, year, cfg);
+    if (!fy.valid) continue;
+    const conv = (n: number, cur: string) => (cur === e.currency ? n : round2((n * (fx.toCAD[cur] ?? FX_TO_CAD[cur] ?? 1)) / (fx.toCAD[e.currency] ?? 1)));
+    const inFy = (d: string | null | undefined) => !!d && d >= fy.start && d <= fy.end;
+    const inv = invoices.filter((i) => i.legalEntityId === e.id && !["draft", "cancelled", "lost"].includes(i.status) && inFy(i.issueDate));
+    const bl = bills.filter((b) => b.legalEntityId === e.id && b.status !== "cancelled" && b.scope !== "perso" && b.paidBy !== "client" && inFy(b.issueDate));
+    const taxOf = (i: (typeof invoices)[number], codes: string[]) => (i.taxes ?? []).filter((t) => codes.includes(String(t.code).toUpperCase())).reduce((a, t) => a + Number(t.amount ?? 0), 0);
+    const base = {
+      revenueHT: round2(inv.reduce((a, i) => a + conv(i.subtotal, i.currency), 0)),
+      expensesHT: round2(bl.reduce((a, b) => a + conv(b.total - b.taxTotal, b.currency), 0)),
+      invoices: inv.length,
+      bills: bl.length,
+    };
+    let result;
+    if (code === "OTP") {
+      const cadBills = bl.filter((b) => b.currency === "CAD");
+      const tax = cadBills.reduce((a, b) => a + b.taxTotal, 0);
+      result = computeOTP(year, cfg, {
+        ...base,
+        gstCollected: round2(inv.reduce((a, i) => a + conv(taxOf(i, ["TPS", "GST"]), i.currency), 0)),
+        qstCollected: round2(inv.reduce((a, i) => a + conv(taxOf(i, ["TVQ", "QST"]), i.currency), 0)),
+        gstItc: round2((tax * 5) / 14.975),
+        qstItr: round2((tax * 9.975) / 14.975),
+        vatCollected: 0,
+        vatDeductible: 0,
+      });
+    } else {
+      // TVA on services: due when cashed → invoices paid during the FY
+      const paid = invoices.filter((i) => i.legalEntityId === e.id && !["draft", "cancelled"].includes(i.status) && i.amountPaid > 0 && inFy(i.paidAt ?? i.issueDate));
+      const vatCollected = round2(paid.reduce((a, i) => a + conv(i.total > 0 ? (i.taxTotal * i.amountPaid) / i.total : 0, i.currency), 0));
+      const vatDeductible = round2(bl.filter((b) => b.fileUrl || b.driveFileId).reduce((a, b) => a + conv(b.taxTotal, b.currency), 0));
+      result = computeMGS(year, cfg, { ...base, vatCollected, vatDeductible });
+    }
+    const done = cfg.done ?? {};
+    out.push({
+      code,
+      name: e.legalName ?? e.name,
+      country: e.country,
+      currency: e.currency,
+      color: e.color,
+      config: Object.fromEntries(Object.entries(cfg).filter(([k]) => k !== "done")),
+      ...result,
+      deadlines: result.deadlines.map((d) => ({ ...d, entity: code, currency: e.currency, done: Boolean(done[d.key]) })),
+    });
+  }
+  return c.json({ year, entities: out, today: new Date().toISOString().slice(0, 10) });
+});
+
+finance.put("/taxes/config/:code", async (c) => {
+  const code = c.req.param("code");
+  if (!DEFAULTS[code]) return c.json({ error: "Unknown entity" }, 400);
+  const patch = (await c.req.json()) as TaxConfig;
+  const cur = await taxConfig(code);
+  await saveTaxConfig(code, { ...cur, ...patch, done: { ...(cur.done ?? {}), ...(patch.done ?? {}) } });
+  return c.json({ ok: true });
 });
